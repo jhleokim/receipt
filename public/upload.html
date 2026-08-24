@@ -24,6 +24,7 @@
     color:#B3312C; font-size:13px; font-weight:600; cursor:pointer; background:#fffdf8;
   }
   label.pick span.icon{font-size:34px; margin-bottom:8px;}
+  label.pick small{font-size:10px; font-weight:400; color:#8B8172; margin-top:3px;}
   input[type=file]{display:none;}
   #status{margin-top:18px; font-size:13px; min-height:18px; color:#3C7A4B;}
   #status.err{color:#B3312C;}
@@ -37,9 +38,9 @@
 </style>
 </head>
 <body>
-  <span id="verTag">v1.1</span>
+  <span id="verTag">v1.2</span>
   <h1>영수증 촬영</h1>
-  <p id="hint">촬영하거나 갤러리에서 선택하면 PC 화면으로 바로 전송돼요. 여러 장 계속 올릴 수 있어요.</p>
+  <p id="hint">촬영하거나 갤러리에서 선택하면 PC 화면으로 바로 전송돼요. 여러 장 한꺼번에 선택할 수 있어요.</p>
   <div class="pick-row" id="pickRow">
     <label class="pick">
       <span class="icon">📷</span>
@@ -49,7 +50,8 @@
     <label class="pick">
       <span class="icon">🖼️</span>
       사진 선택
-      <input type="file" id="fGallery" accept="image/*">
+      <small>여러 장 가능</small>
+      <input type="file" id="fGallery" accept="image/*" multiple>
     </label>
   </div>
   <div id="status"></div>
@@ -61,42 +63,117 @@
   const status = document.getElementById('status');
   const thumbs = document.getElementById('thumbs');
 
+  // 서버(Durable Object)가 한 번에 받을 수 있는 한계가 2MB라서 넉넉히 아래로 잡는다.
+  const MAX_BYTES = 1.5 * 1024 * 1024;
+  // 영수증 글씨를 읽는 데 필요한 해상도는 이 정도면 충분하다.
+  const MAX_DIMENSION = 2000;
+
   if (!session) {
     document.getElementById('hint').textContent = '잘못된 접근이에요. PC 화면의 QR코드를 다시 스캔해주세요.';
     document.getElementById('pickRow').style.display = 'none';
   }
 
-  async function handleFile(input){
-    const file = input.files[0];
+  function loadImage(file){
+    return new Promise((resolve, reject) => {
+      const img = new Image();
+      const url = URL.createObjectURL(file);
+      img.onload = () => { URL.revokeObjectURL(url); resolve(img); };
+      img.onerror = () => { URL.revokeObjectURL(url); reject(new Error('이미지 로드 실패')); };
+      img.src = url;
+    });
+  }
+
+  function canvasToBlob(canvas, quality){
+    return new Promise(resolve => canvas.toBlob(b => resolve(b), 'image/jpeg', quality));
+  }
+
+  // 긴 변을 2000px로 줄이고, 그래도 크면 화질을 단계적으로 낮춰 용량을 맞춘다.
+  async function shrink(file){
+    if (file.size <= MAX_BYTES && !/hei[cf]/i.test(file.type)) return file;
+
+    const img = await loadImage(file);
+    let w = img.naturalWidth, h = img.naturalHeight;
+    const longSide = Math.max(w, h);
+    if (longSide > MAX_DIMENSION){
+      const r = MAX_DIMENSION / longSide;
+      w = Math.round(w * r); h = Math.round(h * r);
+    }
+
+    let blob = null;
+    // 화질을 낮춰도 안 되면 크기 자체를 한 단계씩 더 줄인다
+    for (const shrinkStep of [1, 0.8, 0.65, 0.5]){
+      const cw = Math.max(600, Math.round(w * shrinkStep));
+      const ch = Math.max(600, Math.round(h * shrinkStep));
+      const canvas = document.createElement('canvas');
+      canvas.width = cw; canvas.height = ch;
+      canvas.getContext('2d').drawImage(img, 0, 0, cw, ch);
+
+      for (const q of [0.85, 0.7, 0.55, 0.4]){
+        blob = await canvasToBlob(canvas, q);
+        if (blob && blob.size <= MAX_BYTES) break;
+      }
+      if (blob && blob.size <= MAX_BYTES) break;
+    }
+    if (!blob) return file;
+
+    const base = (file.name || 'photo').replace(/\.[^.]+$/, '');
+    return new File([blob], base + '.jpg', { type: 'image/jpeg' });
+  }
+
+  async function sendOne(file){
+    const prepared = await shrink(file);
+    const fd = new FormData();
+    fd.append('file', prepared, prepared.name || 'photo.jpg');
+    const res = await fetch('/api/upload?s=' + encodeURIComponent(session), {
+      method: 'POST',
+      body: fd
+    });
+    if (!res.ok) {
+      let msg = '업로드 실패 (' + res.status + ')';
+      try {
+        const j = await res.json();
+        if (j && j.message) msg = j.message;
+      } catch(e){}
+      throw new Error(msg);
+    }
+    return prepared;
+  }
+
+  async function handleFiles(input){
+    const files = [...input.files];
     input.value = '';
-    if (!file) return;
+    if (!files.length) return;
 
     status.className = '';
-    status.textContent = '전송 중…';
+    let done = 0, failed = 0;
 
-    try {
-      const fd = new FormData();
-      fd.append('file', file, file.name || 'photo.jpg');
-      const res = await fetch('/api/upload?s=' + encodeURIComponent(session), {
-        method: 'POST',
-        body: fd
-      });
-      if (!res.ok) throw new Error('실패');
+    for (let i = 0; i < files.length; i++){
+      status.textContent = files.length > 1
+        ? ('전송 중… ' + (i+1) + ' / ' + files.length)
+        : '전송 중…';
+      try {
+        const sent = await sendOne(files[i]);
+        done++;
+        const img = document.createElement('img');
+        img.src = URL.createObjectURL(sent);
+        thumbs.appendChild(img);
+      } catch (err) {
+        console.error(err);
+        failed++;
+      }
+    }
 
+    if (failed === 0){
       status.className = '';
-      status.textContent = '전송 완료 ✓ 계속 보낼 수 있어요';
-
-      const img = document.createElement('img');
-      img.src = URL.createObjectURL(file);
-      thumbs.appendChild(img);
-    } catch (err) {
+      status.textContent = done + '장 전송 완료 ✓ 계속 보낼 수 있어요';
+    } else {
       status.className = 'err';
-      status.textContent = '전송 실패, 다시 시도해주세요';
+      status.textContent = done + '장 전송 · ' + failed + '장 실패, 다시 시도해주세요';
     }
   }
 
-  document.getElementById('fCamera').addEventListener('change', (e) => handleFile(e.target));
-  document.getElementById('fGallery').addEventListener('change', (e) => handleFile(e.target));
+  document.getElementById('fCamera').addEventListener('change', (e) => handleFiles(e.target));
+  document.getElementById('fGallery').addEventListener('change', (e) => handleFiles(e.target));
 </script>
 </body>
 </html>
