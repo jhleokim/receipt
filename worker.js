@@ -44,13 +44,23 @@ export class SessionRelay {
       if (!file) return new Response('no file', { status: 400 });
 
       const buf = await file.arrayBuffer();
-      const b64 = arrayBufferToBase64(buf);
-      const id = crypto.randomUUID();
 
+      // SQLite 방식 Durable Object는 키+값 합쳐 2MB가 한계다.
+      // base64로 담으면 용량이 33% 불어나므로 원본 바이트 그대로 저장하고,
+      // 문자열 변환은 PC가 받아갈 때(/poll)만 한다.
+      if (buf.byteLength > 1_900_000) {
+        return new Response(JSON.stringify({
+          ok: false,
+          error: 'too_large',
+          message: '사진 용량이 너무 커요. 조금 더 줄여서 다시 보내주세요.'
+        }), { status: 413, headers: { 'content-type': 'application/json' } });
+      }
+
+      const id = crypto.randomUUID();
       await this.state.storage.put('up:' + id, {
         filename: file.name || 'photo.jpg',
         type: file.type || 'image/jpeg',
-        data: b64,
+        data: buf,
         ts: Date.now()
       });
       await this.state.storage.setAlarm(Date.now() + 15 * 60 * 1000);
@@ -64,7 +74,14 @@ export class SessionRelay {
       const list = await this.state.storage.list({ prefix: 'up:' });
       const out = [];
       for (const [key, val] of list) {
-        out.push(Object.assign({ id: key.slice(3) }, val));
+        out.push({
+          id: key.slice(3),
+          filename: val.filename,
+          type: val.type,
+          // 저장은 원본 바이트로, 전송은 JSON이라 여기서만 base64로 바꾼다
+          data: arrayBufferToBase64(val.data),
+          ts: val.ts
+        });
         await this.state.storage.delete(key);
       }
       return new Response(JSON.stringify(out), {
