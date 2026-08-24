@@ -1,0 +1,86 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>영수증 촬영 전송</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  *{box-sizing:border-box;}
+  body{
+    margin:0; min-height:100vh;
+    background:#F6F1E7; color:#2B2B28;
+    font-family:'IBM Plex Mono', monospace;
+    display:flex; flex-direction:column; align-items:center;
+    padding:48px 20px; text-align:center;
+  }
+  h1{font-size:20px; letter-spacing:.06em; margin:0 0 8px;}
+  p{color:#8B8172; font-size:13px; line-height:1.6; max-width:320px; margin:0 0 26px;}
+  label.pick{
+    display:flex; flex-direction:column; align-items:center; justify-content:center;
+    width:180px; height:180px; border:2px dashed #B3312C; border-radius:12px;
+    color:#B3312C; font-size:14px; font-weight:600; cursor:pointer; background:#fffdf8;
+  }
+  label.pick span.icon{font-size:40px; margin-bottom:8px;}
+  input[type=file]{display:none;}
+  #status{margin-top:18px; font-size:13px; min-height:18px; color:#3C7A4B;}
+  #status.err{color:#B3312C;}
+  #thumbs{display:flex; flex-wrap:wrap; gap:8px; justify-content:center; margin-top:18px; max-width:340px;}
+  #thumbs img{width:64px; height:64px; object-fit:cover; border-radius:6px; border:1px solid #D9D0BC;}
+</style>
+</head>
+<body>
+  <h1>영수증 촬영</h1>
+  <p id="hint">촬영하거나 갤러리에서 선택하면 PC 화면으로 바로 전송돼요. 여러 장 계속 올릴 수 있어요.</p>
+  <label class="pick" id="pickLabel">
+    <span class="icon">📷</span>
+    사진 선택
+    <input type="file" id="f" accept="image/*" capture="environment">
+  </label>
+  <div id="status"></div>
+  <div id="thumbs"></div>
+
+<script>
+  const params = new URLSearchParams(location.search);
+  const session = params.get('s');
+  const input = document.getElementById('f');
+  const status = document.getElementById('status');
+  const thumbs = document.getElementById('thumbs');
+
+  if (!session) {
+    document.getElementById('hint').textContent = '잘못된 접근이에요. PC 화면의 QR코드를 다시 스캔해주세요.';
+    document.getElementById('pickLabel').style.display = 'none';
+  }
+
+  input.addEventListener('change', async () => {
+    const file = input.files[0];
+    input.value = '';
+    if (!file) return;
+
+    status.className = '';
+    status.textContent = '전송 중…';
+
+    try {
+      const fd = new FormData();
+      fd.append('file', file, file.name || 'photo.jpg');
+      const res = await fetch('/api/upload?s=' + encodeURIComponent(session), {
+        method: 'POST',
+        body: fd
+      });
+      if (!res.ok) throw new Error('실패');
+
+      status.className = '';
+      status.textContent = '전송 완료 ✓ 계속 촬영할 수 있어요';
+
+      const img = document.createElement('img');
+      img.src = URL.createObjectURL(file);
+      thumbs.appendChild(img);
+    } catch (err) {
+      status.className = 'err';
+      status.textContent = '전송 실패, 다시 시도해주세요';
+    }
+  });
+</script>
+</body>
+</html>
