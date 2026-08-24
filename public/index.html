@@ -222,7 +222,8 @@
   }
   .stamp-mark.show{opacity:1;}
 
-  footer{text-align:center; color:var(--muted); font-size:11px; margin-top:40px;}
+  footer{text-align:center; color:var(--muted); font-size:11px; margin-top:40px; line-height:1.8;}
+  #verTag{display:inline-block; margin-top:2px; padding:1px 7px; border:1px solid var(--line); border-radius:3px; color:var(--muted); font-size:10px; letter-spacing:.04em;}
 
   #bulkBar, #queuePanel{
     position:sticky; bottom:0; z-index:20;
@@ -373,7 +374,7 @@
   </div>
 </div>
 
-<footer>파일은 저장 전까지 이 브라우저와 임시 세션 안에서만 처리되며, 폰 사진은 PC가 받아가는 즉시 서버에서 삭제됩니다.</footer>
+<footer>파일은 저장 전까지 이 브라우저와 임시 세션 안에서만 처리되며, 폰 사진은 PC가 받아가는 즉시 서버에서 삭제됩니다.<br><span id="verTag">v1.1</span></footer>
 
 <script>
 const { PDFDocument, rgb } = PDFLib;
