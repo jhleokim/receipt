@@ -12,4 +12,4 @@ class_name = "SessionRelay"
 
 [[migrations]]
 tag = "v1"
-new_classes = ["SessionRelay"]
+new_sqlite_classes = ["SessionRelay"]
