@@ -5,6 +5,8 @@ compatibility_date = "2026-08-24"
 [assets]
 directory = "./public"
 binding = "ASSETS"
+# API 경로가 정적 파일로 오인되어 404 로 막히지 않도록 Worker 를 먼저 태웁니다.
+run_worker_first = ["/api/*"]
 
 [[durable_objects.bindings]]
 name = "SESSIONS"
