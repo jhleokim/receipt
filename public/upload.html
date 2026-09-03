@@ -2,60 +2,161 @@
 <html lang="ko">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
 <title>영수증 촬영 전송</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
-<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans+KR:wght@400;500;600;700&display=swap" rel="stylesheet">
 <style>
+  /* index.html 과 같은 토큰을 쓴다 — 두 화면이 같은 제품으로 보이도록 */
+  :root{
+    --paper:#FBF8F1;
+    --paper-sunk:#F3EDE0;
+    --ground:#EAE3D3;
+    --ink:#1E1C19;
+    --ink-2:#57503F;
+    --ink-3:#665F51;
+    --line:#E2DACA;
+    --line-strong:#C9BDA4;
+    --stamp:#A62F2A;
+    --stamp-deep:#82231F;
+    --stamp-wash:#F8E9E6;
+    --ok:#2C6B42;
+    --ok-wash:#E8F1EA;
+
+    --ui:'IBM Plex Sans KR', system-ui, -apple-system, 'Apple SD Gothic Neo', 'Malgun Gothic', sans-serif;
+    --mono:'IBM Plex Mono', ui-monospace, SFMono-Regular, Menlo, monospace;
+
+    --t-2xs:11px; --t-xs:12px; --t-sm:13px; --t-md:15px; --t-lg:17px; --t-xl:21px;
+    --s1:4px; --s2:8px; --s3:12px; --s4:16px; --s5:24px; --s6:32px; --s7:48px;
+    --r1:6px; --r2:10px;
+    --shadow:0 1px 2px rgba(30,28,25,.05), 0 10px 24px -16px rgba(30,28,25,.45);
+  }
+
   *{box-sizing:border-box;}
+  html{-webkit-text-size-adjust:100%;}
   body{
     margin:0; min-height:100vh;
-    background:#F6F1E7; color:#2B2B28;
-    font-family:'IBM Plex Mono', monospace;
+    background:var(--ground);
+    color:var(--ink);
+    font-family:var(--ui);
+    font-size:var(--t-md);
+    line-height:1.6;
+    -webkit-font-smoothing:antialiased;
+    padding:var(--s6) var(--s5) calc(var(--s7) + env(safe-area-inset-bottom));
     display:flex; flex-direction:column; align-items:center;
-    padding:48px 20px; text-align:center;
   }
-  h1{font-size:20px; letter-spacing:.06em; margin:0 0 8px;}
-  p{color:#8B8172; font-size:13px; line-height:1.6; max-width:320px; margin:0 0 26px;}
-  .pick-row{display:flex; gap:14px;}
+
+  .sheet{width:100%; max-width:420px;}
+
+  h1{
+    margin:0 0 var(--s2);
+    font-size:var(--t-xl); font-weight:700; letter-spacing:-.01em;
+    display:flex; align-items:center; gap:var(--s2);
+  }
+  h1 .dot{
+    width:7px; height:7px; border-radius:999px;
+    background:var(--stamp); flex-shrink:0;
+  }
+  #hint{
+    margin:0 0 var(--s5);
+    color:var(--ink-2); font-size:var(--t-sm);
+  }
+
+  /* 두 개의 큰 탭 타깃 — 폰에서 한 손으로 누르는 크기 */
+  .pick-row{display:grid; grid-template-columns:1fr 1fr; gap:var(--s3);}
   label.pick{
     display:flex; flex-direction:column; align-items:center; justify-content:center;
-    width:140px; height:140px; border:2px dashed #B3312C; border-radius:12px;
-    color:#B3312C; font-size:13px; font-weight:600; cursor:pointer; background:#fffdf8;
+    gap:var(--s1); min-height:132px; padding:var(--s4);
+    background:var(--paper);
+    border:1px solid var(--line-strong); border-radius:var(--r2);
+    box-shadow:var(--shadow);
+    color:var(--ink); font-size:var(--t-sm); font-weight:600;
+    cursor:pointer; -webkit-tap-highlight-color:transparent;
+    transition:border-color .12s, background .12s, transform .06s;
   }
-  label.pick span.icon{font-size:34px; margin-bottom:8px;}
-  label.pick small{font-size:10px; font-weight:400; color:#8B8172; margin-top:3px;}
+  label.pick:active{transform:scale(.985); background:var(--stamp-wash); border-color:var(--stamp);}
+  label.pick .icon{color:var(--stamp); margin-bottom:var(--s1); line-height:0;}
+  label.pick small{font-size:var(--t-xs); font-weight:400; color:var(--ink-3);}
   input[type=file]{display:none;}
-  #status{margin-top:18px; font-size:13px; min-height:18px; color:#3C7A4B;}
-  #status.err{color:#B3312C;}
-  #thumbs{display:flex; flex-wrap:wrap; gap:8px; justify-content:center; margin-top:18px; max-width:340px;}
-  #thumbs img{width:64px; height:64px; object-fit:cover; border-radius:6px; border:1px solid #D9D0BC;}
+
+  /* 상태 줄: 내용이 있을 때만 보이고, 실패는 .err 로 표시된다 */
+  #status{
+    margin-top:var(--s4); padding:var(--s3) var(--s4);
+    border-radius:var(--r1);
+    background:var(--ok-wash); border:1px solid #CBE0D2;
+    color:var(--ok); font-size:var(--t-sm); font-weight:500;
+    text-align:center;
+  }
+  #status:empty{display:none;}
+  #status.err{
+    background:var(--stamp-wash); border-color:#EBC9C5; color:var(--stamp);
+  }
+
+  #thumbs{
+    display:grid; grid-template-columns:repeat(4, 1fr); gap:var(--s2);
+    margin-top:var(--s4);
+  }
+  #thumbs:empty{display:none;}
+  #thumbs img{
+    width:100%; aspect-ratio:1; object-fit:cover;
+    border:1px solid var(--line); border-radius:var(--r1);
+    background:var(--paper-sunk);
+  }
+
+  .note{
+    margin-top:var(--s6); padding-top:var(--s4);
+    border-top:1px solid var(--line);
+    color:var(--ink-3); font-size:var(--t-xs); line-height:1.7;
+  }
+
   #verTag{
-    position:fixed; bottom:10px; right:12px;
-    font-size:10px; color:#B3AB9C; letter-spacing:.04em;
-    border:1px solid #D9D0BC; border-radius:3px; padding:1px 7px;
+    position:fixed; right:var(--s3); bottom:calc(var(--s3) + env(safe-area-inset-bottom));
+    padding:2px var(--s2);
+    border:1px solid var(--line); border-radius:var(--r1);
+    font-family:var(--mono); font-size:var(--t-2xs); color:var(--ink-3);
   }
 </style>
 </head>
 <body>
-  <span id="verTag">v1.2</span>
-  <h1>영수증 촬영</h1>
-  <p id="hint">촬영하거나 갤러리에서 선택하면 PC 화면으로 바로 전송돼요. 여러 장 한꺼번에 선택할 수 있어요.</p>
+
+<div class="sheet">
+  <h1><span class="dot"></span>영수증 촬영</h1>
+  <p id="hint">찍거나 고르면 PC 화면으로 바로 전송됩니다. 여러 장 한꺼번에 보낼 수 있어요.</p>
+
   <div class="pick-row" id="pickRow">
     <label class="pick">
-      <span class="icon">📷</span>
+      <span class="icon">
+        <svg width="30" height="30" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <path d="M14.5 4h-5L8 6.5H4.5A1.5 1.5 0 0 0 3 8v10a1.5 1.5 0 0 0 1.5 1.5h15A1.5 1.5 0 0 0 21 18V8a1.5 1.5 0 0 0-1.5-1.5H16z"/>
+          <circle cx="12" cy="12.5" r="3.5"/>
+        </svg>
+      </span>
       사진 촬영
+      <small>지금 찍기</small>
       <input type="file" id="fCamera" accept="image/*" capture="environment">
     </label>
     <label class="pick">
-      <span class="icon">🖼️</span>
+      <span class="icon">
+        <svg width="30" height="30" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <rect x="3" y="4.5" width="18" height="15" rx="2"/>
+          <circle cx="8.5" cy="9.5" r="1.6"/>
+          <path d="m4 16.5 4.5-4 3.5 3 3-2.5 5 4.5"/>
+        </svg>
+      </span>
       사진 선택
       <small>여러 장 가능</small>
       <input type="file" id="fGallery" accept="image/*" multiple>
     </label>
   </div>
+
   <div id="status"></div>
   <div id="thumbs"></div>
+
+  <p class="note">보낸 사진은 PC가 받아가는 즉시 서버에서 지워집니다. 15분 안에 받아가지 않으면 자동으로 삭제돼요.</p>
+</div>
+
+<span id="verTag">v1.3</span>
 
 <script>
   const params = new URLSearchParams(location.search);

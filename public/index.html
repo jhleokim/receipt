@@ -5,333 +5,506 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>영수증 정리기</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
-<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600;700&family=IBM+Plex+Sans+KR:wght@400;500;600;700&display=swap" rel="stylesheet">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf-lib/1.17.1/pdf-lib.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
 <style>
+  /* =========================================================
+     감열지 영수증에서 가져온 디자인 시스템.
+     값은 전부 아래 토큰에서만 꺼내 쓴다 — 임의의 px/색을 새로 만들지 않는다.
+     ========================================================= */
   :root{
-    --paper:#F6F1E7;
-    --paper-dark:#EDE6D6;
-    --ink:#2B2B28;
-    --muted:#8B8172;
-    --line:#D9D0BC;
-    --stamp:#B3312C;
-    --stamp-dark:#8F2620;
-    --highlight:#FFE44D;
-    --ok:#3C7A4B;
-  }
-  *{box-sizing:border-box;}
-  body{
-    margin:0;
-    background:var(--paper-dark);
-    background-image:radial-gradient(circle at 1px 1px, rgba(0,0,0,0.04) 1px, transparent 0);
-    background-size:14px 14px;
-    color:var(--ink);
-    font-family:'IBM Plex Mono', monospace;
-    padding-bottom:80px;
-  }
-  header{
-    padding:38px 20px 24px;
-    text-align:center;
-    border-bottom:2px dashed var(--line);
-    background:var(--paper);
-  }
-  header h1{
-    margin:0 0 8px;
-    font-size:clamp(24px,4vw,34px);
-    letter-spacing:.12em;
-    text-transform:uppercase;
-    font-weight:700;
-  }
-  header h1 span{color:var(--stamp);}
-  header p{
-    margin:0 auto;
-    max-width:560px;
-    color:var(--muted);
-    font-size:13px;
-    line-height:1.6;
-  }
-  header code{
-    display:inline-block;
-    margin-top:10px;
-    padding:4px 10px;
-    background:var(--paper-dark);
-    border:1px dashed var(--line);
-    border-radius:4px;
-    font-size:12.5px;
-    color:var(--ink);
+    /* 종이 */
+    --paper:#FBF8F1;        /* 카드·패널 표면 */
+    --paper-sunk:#F3EDE0;   /* 한 단계 눌린 면(칩·미리보기 바탕) */
+    --ground:#EAE3D3;       /* 페이지 바닥 */
+
+    /* 잉크 — 본문에 쓰는 세 단계는 전부 AA 이상 */
+    --ink:#1E1C19;          /* 본문·제목 */
+    --ink-2:#57503F;        /* 보조 설명 (6.9:1) */
+    --ink-3:#665F51;        /* 라벨·메타 (5.0:1) */
+
+    --line:#E2DACA;         /* 기본 경계 */
+    --line-strong:#C9BDA4;  /* 강조 경계·점선 */
+
+    /* 도장 빨강 — 액센트는 이 하나뿐 */
+    --stamp:#A62F2A;
+    --stamp-deep:#82231F;
+    --stamp-wash:#F8E9E6;
+
+    --ok:#2C6B42;
+    --ok-wash:#E8F1EA;
+
+    /* 타입 */
+    --ui:'IBM Plex Sans KR', system-ui, -apple-system, 'Apple SD Gothic Neo', 'Malgun Gothic', sans-serif;
+    --mono:'IBM Plex Mono', ui-monospace, SFMono-Regular, Menlo, monospace;
+
+    /* 타입 스케일 */
+    --t-2xs:11px; --t-xs:12px; --t-sm:13px; --t-md:15px; --t-lg:17px; --t-xl:21px; --t-2xl:28px;
+
+    /* 스페이싱 스케일 */
+    --s1:4px; --s2:8px; --s3:12px; --s4:16px; --s5:24px; --s6:32px; --s7:48px;
+
+    --r1:6px; --r2:10px;
+    --shadow:0 1px 2px rgba(30,28,25,.05), 0 10px 24px -16px rgba(30,28,25,.45);
+    --wrap:1120px;
+    --bar-h:88px;           /* 하단 액션바가 차지하는 높이 */
   }
 
-  #qrPanel{
-    max-width:900px; margin:26px auto 0; padding:20px 22px;
-    background:var(--paper); border:1px solid var(--line); border-radius:8px;
-    display:flex; gap:20px; align-items:center; flex-wrap:wrap;
+  *{box-sizing:border-box;}
+
+  html{-webkit-text-size-adjust:100%;}
+  body{
+    margin:0; min-height:100vh;
+    /* 카드가 몇 장 없을 때도 푸터가 바닥에 붙도록 세로 플렉스로 둔다 */
+    display:flex; flex-direction:column;
+    background:var(--ground);
+    color:var(--ink);
+    font-family:var(--ui);
+    font-size:var(--t-md);
+    line-height:1.6;
+    padding-bottom:var(--s7);
+    -webkit-font-smoothing:antialiased;
+  }
+  body.has-bar{padding-bottom:calc(var(--bar-h) + var(--s5));}
+
+  .wrap{width:100%; max-width:var(--wrap); margin:0 auto; padding:0 var(--s5);}
+
+  /* 숫자·파일명·코드는 모노로 — 자릿수가 맞아야 읽히는 것들만 */
+  .mono{font-family:var(--mono); font-variant-numeric:tabular-nums;}
+
+  /* ---------- 헤더 ---------- */
+  header{
+    background:var(--paper);
+    border-bottom:1px solid var(--line);
+  }
+  .head-inner{
+    max-width:var(--wrap); margin:0 auto; padding:var(--s5);
+    display:flex; align-items:baseline; gap:var(--s4) var(--s5); flex-wrap:wrap;
+  }
+  .brand{
+    margin:0; font-size:var(--t-xl); font-weight:700; letter-spacing:-.01em;
+    display:flex; align-items:center; gap:var(--s2);
+  }
+  .brand .dot{
+    width:7px; height:7px; border-radius:999px; background:var(--stamp);
+    display:inline-block; flex-shrink:0;
+  }
+  .head-lead{
+    margin:0; color:var(--ink-2); font-size:var(--t-sm);
+    flex:1 1 320px; min-width:0;
+  }
+  .format-chip{
+    display:inline-flex; align-items:center; gap:var(--s2);
+    padding:var(--s2) var(--s3); border-radius:var(--r1);
+    background:var(--paper-sunk); border:1px solid var(--line);
+    font-size:var(--t-xs); color:var(--ink-2); white-space:nowrap;
+  }
+  .format-chip b{font-family:var(--mono); font-weight:500; color:var(--ink);}
+
+  /* ---------- 시작 영역: QR + 드롭존 나란히 ---------- */
+  .start{
+    width:100%;
+    display:grid; gap:var(--s4);
+    grid-template-columns:minmax(0,360px) minmax(0,1fr);
+    align-items:stretch;
+    margin:var(--s5) auto var(--s6);
+  }
+  @media (max-width:820px){ .start{grid-template-columns:1fr;} }
+
+  .panel{
+    background:var(--paper); border:1px solid var(--line);
+    border-radius:var(--r2); box-shadow:var(--shadow);
+  }
+
+  /* QR: 데스크톱은 펼친 상태, 모바일은 접어서 자리를 안 뺏게 */
+  #qrPanel{padding:var(--s4);}
+  #qrPanel > summary{
+    list-style:none; cursor:pointer;
+    display:flex; align-items:center; gap:var(--s2);
+    font-size:var(--t-sm); font-weight:600; color:var(--ink);
+  }
+  #qrPanel > summary::-webkit-details-marker{display:none;}
+  #qrPanel > summary .chev{
+    margin-left:auto; color:var(--ink-3); transition:transform .15s;
+  }
+  #qrPanel[open] > summary .chev{transform:rotate(180deg);}
+  .qr-body{
+    display:flex; gap:var(--s4); align-items:flex-start;
+    margin-top:var(--s4);
   }
   #qrcode{
-    width:140px; height:140px; background:#fff; padding:6px;
-    border:1px solid var(--line); border-radius:6px; flex-shrink:0;
+    width:128px; height:128px; flex-shrink:0;
+    background:#fff; padding:var(--s2);
+    border:1px solid var(--line); border-radius:var(--r1);
   }
-  #qrcode img{display:block;}
-  .qr-info{flex:1; min-width:220px;}
-  .qr-info strong{display:block; font-size:14px; margin-bottom:4px;}
-  .qr-info p{margin:0 0 8px; font-size:12px; color:var(--muted); line-height:1.6;}
-  .qr-link{font-size:11px; color:var(--muted); word-break:break-all;}
-  .qr-status{font-size:12px; margin-top:8px; color:var(--ink);}
-  .qr-status #qrCount{color:var(--stamp); font-weight:700;}
+  #qrcode img, #qrcode canvas{display:block; width:100%; height:100%;}
+  .qr-info{flex:1; min-width:0;}
+  .qr-info p{margin:0 0 var(--s3); font-size:var(--t-xs); color:var(--ink-2); line-height:1.65;}
+  /* 주소는 QR이 대신 전달하므로 한 줄로만 두고 넘치면 줄인다 */
+  .qr-link{
+    display:block; margin:0 0 var(--s3);
+    font-family:var(--mono); font-size:var(--t-2xs); color:var(--ink-3);
+    overflow:hidden; text-overflow:ellipsis; white-space:nowrap;
+  }
+  .qr-status{
+    display:flex; align-items:center; gap:var(--s2);
+    font-size:var(--t-xs); color:var(--ink-2); margin-bottom:var(--s3);
+  }
+  .qr-status .pip{
+    width:6px; height:6px; border-radius:999px; background:var(--ok);
+    flex-shrink:0; box-shadow:0 0 0 3px var(--ok-wash);
+  }
+  .qr-status b{font-family:var(--mono); color:var(--stamp); font-weight:600;}
+  .qr-status.offline .pip{background:var(--ink-3); box-shadow:0 0 0 3px var(--line);}
   #qrRefresh{
-    margin-top:10px; padding:6px 12px; border:1px solid var(--muted); border-radius:4px;
-    background:none; color:var(--muted); font-family:inherit; font-size:11px; cursor:pointer;
+    min-height:36px; padding:var(--s2) var(--s3);
+    border:1px solid var(--line-strong); border-radius:var(--r1);
+    background:var(--paper); color:var(--ink-2);
+    font-family:inherit; font-size:var(--t-xs); cursor:pointer;
+    transition:border-color .15s, color .15s;
   }
   #qrRefresh:hover{border-color:var(--stamp); color:var(--stamp);}
 
+  /* ---------- 드롭존 ---------- */
+  /* 점선은 여기 한 곳에만 쓴다 — "여기에 놓아라"는 뜻이 실제로 있는 자리 */
   #dropzone{
-    max-width:900px;
-    margin:20px auto 26px;
-    padding:30px 20px;
-    border:2px dashed var(--muted);
-    border-radius:10px;
-    text-align:center;
-    color:var(--muted);
-    cursor:pointer;
+    display:flex; flex-direction:column; align-items:center; justify-content:center;
+    gap:var(--s2); text-align:center; cursor:pointer;
+    padding:var(--s6) var(--s5); min-height:180px;
     background:var(--paper);
-    transition:border-color .15s, background .15s;
+    border:1.5px dashed var(--line-strong); border-radius:var(--r2);
+    color:var(--ink-3); font-size:var(--t-xs);
+    transition:border-color .15s, background .15s, color .15s;
   }
-  #dropzone.drag{border-color:var(--stamp); background:#FBF6E9; color:var(--stamp);}
-  #dropzone strong{color:var(--ink); display:block; font-size:15px; margin-bottom:4px;}
+  #dropzone:hover{border-color:var(--stamp); background:var(--stamp-wash);}
+  #dropzone.drag{border-color:var(--stamp); background:var(--stamp-wash); color:var(--stamp);}
+  #dropzone strong{display:block; font-size:var(--t-lg); font-weight:600; color:var(--ink);}
+  #dropzone .dz-icon{color:var(--line-strong); margin-bottom:var(--s1);}
+  #dropzone:hover .dz-icon, #dropzone.drag .dz-icon{color:var(--stamp);}
 
+  /* ---------- 카드 그리드 ---------- */
   #cards{
-    max-width:1200px;
-    margin:0 auto;
-    padding:0 20px;
-    display:grid;
-    grid-template-columns:repeat(auto-fill, minmax(320px,1fr));
-    gap:34px 22px;
+    width:100%; max-width:var(--wrap); margin:0 auto; padding:0 var(--s5);
+    display:grid; grid-template-columns:repeat(auto-fill, minmax(300px,1fr));
+    gap:var(--s6) var(--s5);
+    flex:1 0 auto; /* 카드가 없을 때 남는 공간을 먹어서 푸터를 바닥으로 민다 */
   }
 
   .card{
     position:relative;
     background:var(--paper);
     border:1px solid var(--line);
-    border-radius:6px 6px 0 0;
-    padding:14px 16px 20px;
-    box-shadow:0 6px 14px rgba(0,0,0,0.08);
+    border-bottom:none;
+    border-radius:var(--r2) var(--r2) 0 0;
+    padding:var(--s4) var(--s4) var(--s5);
+    box-shadow:var(--shadow);
   }
+  /* 영수증 절취선 — 종이 컨셉을 남기는 유일한 장식 */
   .card::after{
     content:"";
-    position:absolute; left:0; right:0; bottom:-9px; height:18px;
-    background:radial-gradient(circle at 9px 9px, transparent 8px, var(--paper) 8.5px);
-    background-size:18px 18px;
-    background-repeat:repeat-x;
+    position:absolute; left:-1px; right:-1px; bottom:-8px; height:16px;
+    background:
+      radial-gradient(circle at 8px 8px, transparent 7.5px, var(--line) 7.5px, var(--line) 8.5px, transparent 8.5px) 0 0/16px 16px repeat-x,
+      radial-gradient(circle at 8px 8px, transparent 8px, var(--paper) 8px) 0 0/16px 16px repeat-x;
   }
 
   .card-top{
-    display:flex; align-items:center; justify-content:space-between;
-    gap:8px; margin-bottom:10px;
+    display:flex; align-items:center; gap:var(--s2);
+    margin-bottom:var(--s3);
   }
   .card-top .fname{
-    font-size:11.5px; color:var(--muted);
+    flex:1; min-width:0;
+    font-family:var(--mono); font-size:var(--t-xs); color:var(--ink-3);
     overflow:hidden; text-overflow:ellipsis; white-space:nowrap;
   }
   .card-top button.remove{
-    background:none; border:none; color:var(--muted);
-    font-size:16px; cursor:pointer; line-height:1; padding:2px 4px;
+    flex-shrink:0; width:28px; height:28px; padding:0;
+    display:inline-flex; align-items:center; justify-content:center;
+    background:none; border:none; border-radius:var(--r1);
+    color:var(--ink-3); font-size:var(--t-md); line-height:1; cursor:pointer;
+    transition:background .15s, color .15s;
   }
-  .card-top button.remove:hover{color:var(--stamp);}
+  .card-top button.remove:hover{background:var(--stamp-wash); color:var(--stamp);}
 
   .canvas-wrap{
     position:relative;
-    border:1px solid var(--line);
-    background:repeating-conic-gradient(#ffffff 0 90deg, #f2ede0 0 180deg) 0 0/16px 16px;
     display:flex; align-items:center; justify-content:center;
-    overflow:hidden;
-    min-height:120px;
+    min-height:140px; max-height:360px; overflow:hidden;
+    background:var(--paper-sunk);
+    border:1px solid var(--line); border-radius:var(--r1);
   }
-  .canvas-wrap canvas{
-    display:block; max-width:100%; height:auto;
-  }
-  .canvas-wrap .loading{
-    position:absolute; font-size:12px; color:var(--muted);
-  }
-  .hl-row{
-    display:flex; gap:8px; margin:8px 0 2px;
-  }
+  /* 캔버스는 CSS로만 줄인다 — 드래그 좌표는 JS가 getBoundingClientRect로 환산 */
+  .canvas-wrap canvas{display:block; max-width:100%; max-height:360px; width:auto; height:auto;}
+  .canvas-wrap .loading{position:absolute; font-size:var(--t-xs); color:var(--ink-3);}
+
+  /* ---------- 하이라이트 / OCR 줄 ---------- */
+  .hl-row{display:flex; gap:var(--s2); margin-top:var(--s3);}
   .hl-row .hl-toggle{
-    flex:1; padding:7px 10px; border:1px solid var(--stamp); border-radius:4px;
-    background:#fffdf8; color:var(--stamp); font-family:inherit; font-size:11.5px;
-    font-weight:600; cursor:pointer;
+    flex:1; display:inline-flex; align-items:center; justify-content:center; gap:var(--s2);
+    padding:var(--s2) var(--s3); min-height:36px;
+    border:1px solid var(--line-strong); border-radius:var(--r1);
+    background:var(--paper); color:var(--ink-2);
+    font-family:inherit; font-size:var(--t-xs); font-weight:500; cursor:pointer;
+    transition:background .15s, color .15s, border-color .15s;
   }
-  .hl-row .hl-toggle.active{background:var(--stamp); color:#fff;}
+  .hl-row .hl-toggle:hover{border-color:var(--stamp); color:var(--stamp);}
+  .hl-row .hl-toggle.active{background:var(--stamp); border-color:var(--stamp); color:#fff;}
   .hl-row .clear{
-    padding:7px 10px; border:1px solid var(--muted); border-radius:4px;
-    background:none; color:var(--muted); font-family:inherit; font-size:11.5px; cursor:pointer;
+    flex-shrink:0; padding:var(--s2) var(--s3); min-height:36px;
+    border:1px solid var(--line); border-radius:var(--r1);
+    background:none; color:var(--ink-3);
+    font-family:inherit; font-size:var(--t-xs); cursor:pointer;
+    transition:border-color .15s, color .15s;
   }
-  .hl-row .clear:hover{border-color:var(--stamp); color:var(--stamp);}
+  .hl-row .clear:hover{border-color:var(--line-strong); color:var(--ink);}
+
   .ocr-row{
-    font-size:11px; color:var(--muted); margin:2px 0 4px; min-height:14px;
-    display:flex; justify-content:space-between; align-items:center; gap:8px;
+    display:flex; justify-content:space-between; align-items:center; gap:var(--s2);
+    min-height:20px; margin-top:var(--s2);
+    font-size:var(--t-xs); color:var(--ink-3);
   }
   .ocr-row .ocr-status{overflow:hidden; text-overflow:ellipsis; white-space:nowrap;}
   .ocr-row button.ocr-retry{
-    border:none; background:none; color:var(--stamp); flex-shrink:0;
-    font-size:11px; cursor:pointer; text-decoration:underline; padding:0;
+    flex-shrink:0; padding:0; border:none; background:none;
+    color:var(--stamp); font-family:inherit; font-size:var(--t-xs);
+    cursor:pointer; text-decoration:underline; text-underline-offset:2px;
   }
 
+  /* ---------- 입력 필드 ---------- */
   .fields{
-    margin-top:6px;
-    display:grid;
-    grid-template-columns:1fr 1fr;
-    gap:8px 10px;
+    display:grid; grid-template-columns:1fr 1fr; gap:var(--s3);
+    margin-top:var(--s3);
   }
-  .field{display:flex; flex-direction:column; gap:3px;}
-  .field label{font-size:10.5px; color:var(--muted); letter-spacing:.04em;}
+  .field{display:flex; flex-direction:column; gap:var(--s1);}
+  .field label{font-size:var(--t-xs); color:var(--ink-3);}
   .field input{
-    font-family:inherit; font-size:13px; color:var(--ink);
-    border:1px solid var(--line); border-radius:4px;
-    padding:6px 8px; background:#fffdf8;
+    width:100%; min-height:40px; padding:var(--s2) var(--s3);
+    font-family:inherit; font-size:var(--t-sm); color:var(--ink);
+    background:var(--paper); border:1px solid var(--line-strong); border-radius:var(--r1);
+    transition:border-color .15s, box-shadow .15s;
   }
-  .field input:focus{outline:2px solid var(--stamp); outline-offset:1px;}
-  .field input::placeholder{color:#B3AB9C;}
+  .field input.in-amount, .field input.in-date{font-family:var(--mono); font-variant-numeric:tabular-nums;}
+  .field input:focus{
+    outline:none; border-color:var(--stamp);
+    box-shadow:0 0 0 3px var(--stamp-wash);
+  }
+  .field input::placeholder{color:var(--ink-3); opacity:.65;}
 
   .fname-preview{
-    margin-top:12px; padding:8px 10px;
-    background:var(--paper-dark); border:1px dashed var(--line); border-radius:4px;
-    font-size:12px; word-break:break-all; color:var(--ink);
+    margin-top:var(--s3); padding:var(--s3);
+    background:var(--paper-sunk); border-radius:var(--r1);
+    font-size:var(--t-xs); color:var(--ink-3);
+    display:flex; flex-direction:column; gap:var(--s1);
   }
-  .fname-preview b{color:var(--stamp); font-weight:600;}
+  .fname-preview b{
+    font-family:var(--mono); font-size:var(--t-sm); font-weight:500;
+    color:var(--ink); word-break:break-all;
+  }
 
-  .save-row{margin-top:12px; display:flex; align-items:center; gap:10px;}
+  .save-row{margin-top:var(--s3);}
   .save-btn{
-    flex:1; padding:10px 12px; border:none; border-radius:4px;
-    background:var(--stamp); color:#fff; font-family:inherit;
-    font-size:13px; font-weight:600; letter-spacing:.04em; cursor:pointer;
+    width:100%; min-height:44px; padding:var(--s3) var(--s4);
+    border:none; border-radius:var(--r1);
+    background:var(--stamp); color:#fff;
+    font-family:inherit; font-size:var(--t-sm); font-weight:600; cursor:pointer;
     transition:background .15s;
   }
-  .save-btn:hover{background:var(--stamp-dark);}
-  .save-btn:disabled{background:var(--muted); cursor:default;}
+  .save-btn:hover{background:var(--stamp-deep);}
+  .save-btn:disabled{background:var(--line-strong); cursor:default;}
 
+  /* 저장 완료 도장 — 삭제 버튼과 겹치지 않게 영수증 미리보기 위에 찍는다 */
   .stamp-mark{
-    position:absolute; top:14px; right:16px;
-    border:2px solid var(--ok); color:var(--ok);
-    border-radius:6px; padding:2px 8px; font-size:11px; font-weight:700;
-    letter-spacing:.06em; transform:rotate(-9deg);
-    opacity:0; transition:opacity .2s;
-    background:rgba(255,255,255,.7);
+    position:absolute; top:calc(var(--s4) + 44px); right:calc(var(--s4) + var(--s3)); z-index:2;
+    display:inline-flex; align-items:center; gap:var(--s1);
+    padding:var(--s1) var(--s2);
+    border:2px solid var(--ok); border-radius:var(--r1);
+    background:var(--ok-wash); color:var(--ok);
+    font-size:var(--t-xs); font-weight:700;
+    transform:rotate(-8deg) scale(.9);
+    opacity:0; transition:opacity .2s, transform .2s;
     pointer-events:none;
   }
-  .stamp-mark.show{opacity:1;}
+  .stamp-mark.show{opacity:1; transform:rotate(-8deg) scale(1);}
 
-  footer{text-align:center; color:var(--muted); font-size:11px; margin-top:40px; line-height:1.8;}
-  #verTag{display:inline-block; margin-top:2px; padding:1px 7px; border:1px solid var(--line); border-radius:3px; color:var(--muted); font-size:10px; letter-spacing:.04em;}
-
+  /* ---------- 하단 액션바 ---------- */
   #bulkBar, #queuePanel{
-    position:sticky; bottom:0; z-index:20;
-    margin-top:40px; padding:14px 20px 16px;
+    position:fixed; left:0; right:0; bottom:0; z-index:20;
+    padding:var(--s3) 0 var(--s4);
     background:var(--paper);
-    border-top:2px solid var(--stamp);
-    box-shadow:0 -6px 18px rgba(0,0,0,0.10);
+    border-top:1px solid var(--line);
+    box-shadow:0 -8px 24px -12px rgba(30,28,25,.35);
   }
   #bulkBar.hidden, #queuePanel.hidden{display:none;}
   .bulk-inner{
-    max-width:900px; margin:0 auto;
-    display:flex; gap:10px; align-items:center; flex-wrap:wrap;
+    max-width:var(--wrap); margin:0 auto; padding:0 var(--s5);
+    display:flex; gap:var(--s3); align-items:center; flex-wrap:wrap;
   }
-  .bulk-count{font-size:12px; color:var(--muted); margin-right:auto;}
-  .bulk-count b{color:var(--stamp); font-size:15px;}
-  .bulk-sel{
-    font-size:11.5px; color:var(--muted);
-    display:flex; align-items:center; gap:6px;
-  }
-  .bulk-sel select{
-    font-family:inherit; font-size:11.5px; color:var(--ink);
-    padding:8px 8px; border:1px solid var(--line); border-radius:4px; background:#fffdf8;
-  }
+  .bulk-count{margin-right:auto; font-size:var(--t-sm); color:var(--ink-2);}
+  .bulk-count b{font-family:var(--mono); font-size:var(--t-lg); color:var(--stamp); font-weight:600;}
   .bulk-btn{
-    padding:11px 16px; border:1px solid var(--stamp); border-radius:4px;
-    background:#fffdf8; color:var(--stamp);
-    font-family:inherit; font-size:12.5px; font-weight:600; cursor:pointer;
-    transition:background .15s, color .15s;
+    min-height:44px; padding:var(--s3) var(--s5);
+    border:1px solid var(--line-strong); border-radius:var(--r1);
+    background:var(--paper); color:var(--ink);
+    font-family:inherit; font-size:var(--t-sm); font-weight:500; cursor:pointer;
+    transition:background .15s, border-color .15s, color .15s;
   }
-  .bulk-btn:hover{background:var(--paper-dark);}
-  .bulk-btn.primary{background:var(--stamp); color:#fff;}
-  .bulk-btn.primary:hover{background:var(--stamp-dark);}
-  .bulk-btn:disabled{border-color:var(--muted); background:var(--muted); color:#fff; cursor:default;}
+  .bulk-btn:hover{border-color:var(--ink-3); background:var(--paper-sunk);}
+  .bulk-btn.primary{
+    background:var(--stamp); border-color:var(--stamp); color:#fff; font-weight:600;
+  }
+  .bulk-btn.primary:hover{background:var(--stamp-deep); border-color:var(--stamp-deep);}
+  .bulk-btn:disabled{
+    background:var(--paper-sunk); border-color:var(--line);
+    color:var(--ink-3); cursor:default;
+  }
   .bulk-status{
-    max-width:900px; margin:8px auto 0;
-    font-size:11.5px; color:var(--muted); min-height:15px; text-align:center;
+    max-width:var(--wrap); margin:var(--s2) auto 0; padding:0 var(--s5);
+    min-height:16px; font-size:var(--t-xs); color:var(--ink-2); text-align:center;
   }
-  @media (max-width:520px){
+  @media (max-width:640px){
     .bulk-inner{flex-direction:column; align-items:stretch;}
-    .bulk-count{margin:0 0 4px; text-align:center;}
+    .bulk-count{margin:0 0 var(--s1); text-align:center;}
     .bulk-btn{width:100%;}
   }
 
-  /* PDF 미리보기 패널 */
+  /* ---------- PDF 미리보기 ---------- */
   #pdfPreviewPanel{
     position:fixed; inset:0; z-index:50;
-    background:rgba(43,43,40,0.55);
+    background:rgba(30,28,25,.5);
     display:flex; align-items:flex-end; justify-content:center;
   }
   #pdfPreviewPanel.hidden{display:none;}
   .preview-sheet{
-    width:100%; max-width:680px; max-height:88vh;
-    background:var(--paper); border-radius:14px 14px 0 0;
-    padding:18px 18px 20px; overflow-y:auto;
-    display:flex; flex-direction:column; gap:14px;
+    width:100%; max-width:720px; max-height:88vh;
+    display:flex; flex-direction:column; gap:var(--s4);
+    padding:var(--s5);
+    background:var(--paper);
+    border-radius:var(--r2) var(--r2) 0 0;
+    overflow-y:auto;
   }
-  .preview-head{display:flex; justify-content:space-between; align-items:center;}
-  .preview-head h3{margin:0; font-size:15px; letter-spacing:.04em;}
+  @media (min-width:721px){
+    #pdfPreviewPanel{align-items:center;}
+    .preview-sheet{border-radius:var(--r2); max-height:84vh;}
+  }
+  .preview-head{display:flex; justify-content:space-between; align-items:center; gap:var(--s3);}
+  .preview-head h3{margin:0; font-size:var(--t-lg); font-weight:600;}
   .preview-head .close{
-    background:none; border:none; font-size:18px; color:var(--muted); cursor:pointer; padding:2px 6px;
+    width:32px; height:32px; padding:0;
+    display:inline-flex; align-items:center; justify-content:center;
+    border:none; border-radius:var(--r1); background:none;
+    color:var(--ink-3); font-size:var(--t-md); cursor:pointer;
+    transition:background .15s, color .15s;
   }
+  .preview-head .close:hover{background:var(--paper-sunk); color:var(--ink);}
   .preview-slider-row{
-    display:flex; align-items:center; gap:10px;
-    font-size:11.5px; color:var(--muted);
+    display:flex; align-items:center; gap:var(--s3);
+    font-size:var(--t-xs); color:var(--ink-3);
   }
   .preview-slider-row input[type=range]{flex:1; accent-color:var(--stamp);}
-  .preview-slider-row b{color:var(--stamp); font-size:12.5px; width:34px; text-align:right;}
+  .preview-slider-row b{
+    width:44px; text-align:right;
+    font-family:var(--mono); font-size:var(--t-sm); color:var(--ink);
+  }
   #previewStrip{
-    display:flex; gap:14px; overflow-x:auto; padding:6px 2px 10px;
-    border-top:1px dashed var(--line); border-bottom:1px dashed var(--line);
+    display:flex; gap:var(--s4); overflow-x:auto;
+    padding:var(--s4) var(--s1);
+    background:var(--paper-sunk); border-radius:var(--r1);
   }
   .preview-page{flex-shrink:0; text-align:center;}
-  .preview-page canvas{display:block; box-shadow:0 3px 10px rgba(0,0,0,0.18); border-radius:2px;}
-  .preview-page-label{font-size:10px; color:var(--muted); margin-top:5px;}
-  .preview-foot{display:flex; justify-content:space-between; align-items:center; font-size:11.5px; color:var(--muted);}
-  #previewDownload{
-    padding:11px 16px; border:none; border-radius:4px;
-    background:var(--stamp); color:#fff; font-family:inherit;
-    font-weight:600; font-size:13px; cursor:pointer;
+  .preview-page canvas{
+    display:block; border-radius:2px;
+    box-shadow:0 2px 10px -2px rgba(30,28,25,.3);
   }
-  #previewDownload:hover{background:var(--stamp-dark);}
-  #previewDownload:disabled{background:var(--muted); cursor:default;}
+  .preview-page-label{
+    margin-top:var(--s2);
+    font-family:var(--mono); font-size:var(--t-2xs); color:var(--ink-3);
+  }
+  .preview-foot{
+    display:flex; justify-content:space-between; align-items:center; gap:var(--s3);
+    font-size:var(--t-xs); color:var(--ink-2);
+  }
+  #previewDownload{
+    min-height:44px; padding:var(--s3) var(--s5);
+    border:none; border-radius:var(--r1);
+    background:var(--stamp); color:#fff;
+    font-family:inherit; font-size:var(--t-sm); font-weight:600; cursor:pointer;
+    transition:background .15s;
+  }
+  #previewDownload:hover{background:var(--stamp-deep);}
+  #previewDownload:disabled{background:var(--line-strong); cursor:default;}
+
+  /* ---------- 푸터 ---------- */
+  footer{
+    width:100%; max-width:var(--wrap); margin:var(--s7) auto 0; padding:var(--s5);
+    border-top:1px solid var(--line);
+    text-align:center; font-size:var(--t-xs); color:var(--ink-3); line-height:1.8;
+  }
+  #verTag{
+    display:inline-block; margin-top:var(--s2); padding:2px var(--s2);
+    border:1px solid var(--line); border-radius:var(--r1);
+    font-family:var(--mono); font-size:var(--t-2xs); color:var(--ink-3);
+  }
+
+  /* ---------- 모바일 ---------- */
+  @media (max-width:820px){
+    .head-inner{padding:var(--s4) var(--s5); gap:var(--s2);}
+    .brand{font-size:var(--t-lg);}
+    .head-lead{flex-basis:100%;}
+    #dropzone{min-height:150px; padding:var(--s5) var(--s4);}
+    #cards{grid-template-columns:1fr; gap:var(--s6) var(--s4); padding:0 var(--s5);}
+    .fields{gap:var(--s2) var(--s3);}
+  }
 </style>
 </head>
 
 <body>
 
 <header>
-  <h1>영수증<span>·</span>정리기</h1>
-  <p>영수증 사진·PDF를 올리거나 QR로 폰에서 바로 촬영해서 보내세요. 업로드하면 OCR이 날짜·장소·금액을 자동으로 읽어 채워줘요(꼭 확인 후 저장하세요). "영역 표시하기"를 누른 뒤 금액 위를 드래그하면 하이라이트도 표시돼요.</p>
-  <code>yyyymmdd_이름_결제장소_금액.jpg(pdf)</code> 형식으로 저장됩니다.
+  <div class="head-inner">
+    <h1 class="brand"><span class="dot"></span>영수증 정리기</h1>
+    <p class="head-lead">사진이나 PDF를 올리면 OCR이 날짜·장소·금액을 읽어 채웁니다. 저장 전에 값이 맞는지 확인해 주세요.</p>
+    <span class="format-chip">저장 형식 <b>yyyymmdd_이름_장소_금액</b></span>
+  </div>
 </header>
 
-<section id="qrPanel">
-  <div id="qrcode"></div>
-  <div class="qr-info">
-    <strong>📱 폰으로 촬영해서 올리기</strong>
-    <p>이 QR코드를 폰 카메라로 스캔하면 촬영한 사진이 이 화면으로 바로 전송돼요. 코드는 15분간 유효해요.</p>
-    <p class="qr-link" id="qrLink"></p>
-    <div class="qr-status"><span id="qrCount">0</span>장 수신됨 · <span id="qrPolling">대기 중…</span></div>
-    <button id="qrRefresh">새 코드 발급</button>
+<section class="wrap start">
+
+  <details id="qrPanel" class="panel" open>
+    <summary>
+      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        <rect x="6" y="2" width="12" height="20" rx="2.5"/><path d="M11 18.5h2"/>
+      </svg>
+      폰으로 촬영해서 올리기
+      <svg class="chev" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        <path d="m6 9 6 6 6-6"/>
+      </svg>
+    </summary>
+    <div class="qr-body">
+      <div id="qrcode"></div>
+      <div class="qr-info">
+        <p>폰 카메라로 스캔하면 찍은 사진이 이 화면으로 바로 옵니다. 코드는 15분간 유효합니다.</p>
+        <div class="qr-status">
+          <span class="pip" aria-hidden="true"></span><span id="qrPolling">연결 확인 중</span> · <b id="qrCount">0</b>장 수신
+        </div>
+        <span class="qr-link" id="qrLink"></span>
+        <button id="qrRefresh" type="button">새 코드 발급</button>
+      </div>
+    </div>
+  </details>
+
+  <div id="dropzone">
+    <svg class="dz-icon" width="30" height="30" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+      <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="m8 8 4-4 4 4"/><path d="M12 4v12"/>
+    </svg>
+    <strong>클릭하거나 파일을 끌어다 놓으세요</strong>
+    JPG · PNG · PDF · 여러 장 한 번에 · PDF는 첫 페이지만 처리됩니다
   </div>
+
 </section>
 
-<div id="dropzone">
-  <strong>여기를 클릭하거나 파일을 끌어다 놓으세요</strong>
-  이미지(JPG·PNG) 또는 PDF · 여러 개 동시 업로드 가능 · PDF는 첫 페이지만 처리돼요
-</div>
 <input type="file" id="fileInput" multiple accept="image/*,application/pdf" hidden>
 
 <div id="cards"></div>
@@ -339,8 +512,8 @@
 <div id="bulkBar" class="hidden">
   <div class="bulk-inner">
     <div class="bulk-count"><b id="bulkCount">0</b>건 준비됨</div>
-    <button id="btnEach" class="bulk-btn">전부 저장하기 (개별파일)</button>
-    <button id="btnPdf" class="bulk-btn primary">PDF 미리보기</button>
+    <button id="btnEach" class="bulk-btn" type="button">개별 파일로 저장</button>
+    <button id="btnPdf" class="bulk-btn primary" type="button">PDF로 묶기</button>
   </div>
   <div class="bulk-status" id="bulkStatus"></div>
 </div>
@@ -348,33 +521,42 @@
 <div id="queuePanel" class="hidden">
   <div class="bulk-inner">
     <span id="queueLabel" class="bulk-count">0 / 0</span>
-    <button id="queueNext" class="bulk-btn primary">파일 받기</button>
-    <button id="queueClose" class="bulk-btn">닫기</button>
+    <button id="queueNext" class="bulk-btn primary" type="button">파일 받기</button>
+    <button id="queueClose" class="bulk-btn" type="button">닫기</button>
   </div>
-  <p class="bulk-status">한 번에 여러 파일 저장이 안 되는 브라우저라, 눌러서 한 장씩 받아야 해요.</p>
+  <p class="bulk-status">한 번에 여러 파일 저장이 안 되는 브라우저예요. 눌러서 한 장씩 받아주세요.</p>
 </div>
 
 <div id="pdfPreviewPanel" class="hidden">
   <div class="preview-sheet">
     <div class="preview-head">
       <h3>PDF 미리보기</h3>
-      <button class="close" id="previewClose">✕</button>
+      <button class="close" id="previewClose" type="button" aria-label="닫기">✕</button>
     </div>
     <div class="preview-slider-row">
       <span>작게</span>
-      <input type="range" id="colsSlider" min="1" max="4" step="1" value="2">
+      <input type="range" id="colsSlider" min="1" max="4" step="1" value="2" aria-label="한 페이지에 넣을 열 수">
       <span>크게</span>
       <b id="colsLabel">2열</b>
     </div>
     <div id="previewStrip"></div>
     <div class="preview-foot">
       <span id="previewPageCount"></span>
-      <button id="previewDownload">이 설정으로 다운로드</button>
+      <button id="previewDownload" type="button">이 설정으로 다운로드</button>
     </div>
   </div>
 </div>
 
-<footer>파일은 저장 전까지 이 브라우저와 임시 세션 안에서만 처리되며, 폰 사진은 PC가 받아가는 즉시 서버에서 삭제됩니다.<br><span id="verTag">v1.2</span></footer>
+<footer>
+  파일은 저장 전까지 이 브라우저와 임시 세션 안에서만 처리되며,<br>
+  폰 사진은 PC가 받아가는 즉시 서버에서 삭제됩니다.
+  <br><span id="verTag">v1.3</span>
+</footer>
+
+<script>
+  // 폰에서는 QR 블록이 첫 화면을 다 잡아먹으므로 접어둔다 (PC에서는 펼친 채로).
+  document.getElementById('qrPanel').open = window.matchMedia('(min-width:821px)').matches;
+</script>
 
 <script>
 const { PDFDocument, rgb } = PDFLib;
@@ -415,7 +597,9 @@ function renderQR(){
   new QRCode(document.getElementById('qrcode'), {
     text: mobileUrl, width: 128, height: 128, correctLevel: QRCode.CorrectLevel.M
   });
-  document.getElementById('qrLink').textContent = mobileUrl;
+  const linkEl = document.getElementById('qrLink');
+  linkEl.textContent = mobileUrl;
+  linkEl.title = mobileUrl; // 한 줄로 줄여 보여주므로 전체 주소는 툴팁으로 남긴다
 }
 renderQR();
 
@@ -433,10 +617,18 @@ function b64ToBlob(b64, type){
   return new Blob([arr], { type });
 }
 
+// 릴레이가 실제로 응답하고 있는지를 QR 패널의 점으로 보여준다
+const qrPollingEl = document.getElementById('qrPolling');
+function setRelayState(ok){
+  qrPollingEl.textContent = ok ? '연결됨' : '연결 끊김';
+  qrPollingEl.closest('.qr-status').classList.toggle('offline', !ok);
+}
+
 async function pollSession(){
   try{
     const res = await fetch('/api/poll?s=' + encodeURIComponent(session));
-    if (!res.ok) return;
+    if (!res.ok){ setRelayState(false); return; }
+    setRelayState(true);
     const list = await res.json();
     if (list.length){
       list.forEach(u => {
@@ -447,9 +639,10 @@ async function pollSession(){
       });
       document.getElementById('qrCount').textContent = String(receivedCount);
     }
-  } catch(e){ /* 다음 폴링에서 재시도 */ }
+  } catch(e){ setRelayState(false); /* 다음 폴링에서 재시도 */ }
 }
 setInterval(pollSession, 3000);
+pollSession(); // 첫 3초 동안 상태가 "확인 중"으로 멈춰 보이지 않도록 한 번 먼저 찔러본다
 
 /* ---------- 공통 유틸 ---------- */
 function sanitize(str){
@@ -483,7 +676,7 @@ function makeCard(item){
       '<button class="remove" title="삭제">✕</button>' +
     '</div>' +
     '<div class="canvas-wrap"><span class="loading">불러오는 중…</span></div>' +
-    '<div class="hl-row"><button class="hl-toggle">🖊 영역 표시하기</button><button class="clear">지우기</button></div>' +
+    '<div class="hl-row"><button class="hl-toggle" type="button">영역 표시하기</button><button class="clear" type="button">지우기</button></div>' +
     '<div class="ocr-row"><span class="ocr-status"></span><button class="ocr-retry">다시 인식</button></div>' +
     '<div class="fields">' +
       '<div class="field"><label>결제일자</label><input type="date" class="in-date"></div>' +
@@ -491,7 +684,7 @@ function makeCard(item){
       '<div class="field"><label>결제장소</label><input type="text" class="in-place" placeholder="예: 스타벅스"></div>' +
       '<div class="field"><label>금액(원)</label><input type="text" inputmode="numeric" class="in-amount" placeholder="예: 12500"></div>' +
     '</div>' +
-    '<div class="fname-preview">파일명 미리보기: <b class="fname-out"></b></div>' +
+    '<div class="fname-preview">저장될 파일명<b class="fname-out"></b></div>' +
     '<div class="save-row"><button class="save-btn">저장</button></div>';
 
   item.els = {
@@ -515,7 +708,7 @@ function makeCard(item){
   item.setHLMode = function(on){
     item.highlightMode = on;
     item.els.hlToggle.classList.toggle('active', on);
-    item.els.hlToggle.textContent = on ? '✓ 표시 중 (그리면 자동으로 꺼져요)' : '🖊 영역 표시하기';
+    item.els.hlToggle.textContent = on ? '표시 중 · 금액 위를 드래그' : '영역 표시하기';
     if (item.canvas){
       item.canvas.style.touchAction = on ? 'none' : 'pan-y';
       item.canvas.style.cursor = on ? 'crosshair' : 'default';
@@ -1074,6 +1267,8 @@ function updateBulkBar(){
   const n = items.filter(it => it.alive).length;
   bulkCountEl.textContent = String(n);
   bulkBar.classList.toggle('hidden', n === 0);
+  // 하단 바가 고정이라 마지막 카드가 가리지 않도록 본문 아래 여백을 준다
+  document.body.classList.toggle('has-bar', n > 0);
 }
 function bulkBusy(on, msg){
   btnEach.disabled = on;
