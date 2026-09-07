@@ -37,6 +37,10 @@
     --ok:#2C6B42;
     --ok-wash:#E8F1EA;
 
+    /* 하나금융그룹 청록 — 저장 완료를 알리는 데만 쓴다 (로고 SVG 원색) */
+    --hana:0,149,145;        /* rgb 성분으로 둬야 그림자 투명도를 단계별로 줄 수 있다 */
+    --hana-deep:#00706D;
+
     /* 타입 */
     --ui:'IBM Plex Sans KR', system-ui, -apple-system, 'Apple SD Gothic Neo', 'Malgun Gothic', sans-serif;
     --mono:'IBM Plex Mono', ui-monospace, SFMono-Regular, Menlo, monospace;
@@ -201,6 +205,7 @@
     border-radius:var(--r2) var(--r2) 0 0;
     padding:var(--s4) var(--s4) var(--s5);
     box-shadow:var(--shadow);
+    transition:box-shadow .45s cubic-bezier(.22,1,.36,1), border-color .45s cubic-bezier(.22,1,.36,1);
   }
   /* 영수증 절취선 — 종이 컨셉을 남기는 유일한 장식 */
   .card::after{
@@ -342,19 +347,54 @@
   }
   .share-btn svg{flex-shrink:0;}
 
-  /* 저장 완료 도장 — 삭제 버튼과 겹치지 않게 영수증 미리보기 위에 찍는다 */
-  .stamp-mark{
-    position:absolute; top:calc(var(--s4) + 44px); right:calc(var(--s4) + var(--s3)); z-index:2;
-    display:inline-flex; align-items:center; gap:var(--s1);
-    padding:var(--s1) var(--s2);
-    border:2px solid var(--ok); border-radius:var(--r1);
-    background:var(--ok-wash); color:var(--ok);
-    font-size:var(--t-xs); font-weight:700;
-    transform:rotate(-8deg) scale(.9);
-    opacity:0; transition:opacity .2s, transform .2s;
-    pointer-events:none;
+  /* ---------- 저장 완료 ----------
+     도장을 찍는 대신 종이 가장자리에 청록 빛이 남는다.
+     한 겹짜리 진한 그림자 대신, 얇은 링 + 가까운 그림자 + 넓게 퍼지는 빛을
+     겹쳐서 "빛난다"에 가깝게 만든다. */
+  .card.saved{
+    border-color:rgba(var(--hana), .55);
+    box-shadow:
+      0 0 0 1px rgba(var(--hana), .40),
+      0 1px 2px rgba(30,28,25,.05),
+      0 0 20px 0 rgba(var(--hana), .28),
+      0 14px 34px -8px rgba(var(--hana), .42);
   }
-  .stamp-mark.show{opacity:1; transform:rotate(-8deg) scale(1);}
+  /* 절취선도 같이 물들어야 종이 한 장 전체가 빛나 보인다 */
+  .card.saved::after{
+    background:
+      radial-gradient(circle at 8px 8px, transparent 7.5px, rgba(var(--hana), .5) 7.5px, rgba(var(--hana), .5) 8.5px, transparent 8.5px) 0 0/16px 16px repeat-x,
+      radial-gradient(circle at 8px 8px, transparent 8px, var(--paper) 8px) 0 0/16px 16px repeat-x;
+  }
+  /* 저장한 순간에만 한 번 부풀었다가 위 상태로 가라앉는다 */
+  @keyframes savedBloom{
+    0%{
+      box-shadow:
+        0 0 0 1px rgba(var(--hana), 0),
+        0 1px 2px rgba(30,28,25,.05),
+        0 0 20px 0 rgba(var(--hana), 0),
+        0 14px 34px -8px rgba(var(--hana), 0);
+    }
+    40%{
+      box-shadow:
+        0 0 0 2px rgba(var(--hana), .65),
+        0 1px 2px rgba(30,28,25,.05),
+        0 0 34px 4px rgba(var(--hana), .5),
+        0 20px 52px -10px rgba(var(--hana), .65);
+    }
+  }
+  .card.saved{animation:savedBloom .85s cubic-bezier(.22,1,.36,1);}
+
+  /* 색만으로 알리지 않도록 파일명 옆에 조용한 글자 표시를 남긴다 */
+  .saved-tag{
+    display:none; flex-shrink:0;
+    align-items:center; gap:3px;
+    font-size:var(--t-2xs); font-weight:600; color:var(--hana-deep);
+  }
+  .card.saved .saved-tag{display:inline-flex;}
+
+  @media (prefers-reduced-motion: reduce){
+    .card.saved{animation:none;}
+  }
 
   /* ---------- 하단 액션바 ---------- */
   #bulkBar, #queuePanel{
@@ -577,7 +617,7 @@
 <footer>
   파일은 저장 전까지 이 브라우저와 임시 세션 안에서만 처리되며,<br>
   폰 사진은 PC가 받아가는 즉시 서버에서 삭제됩니다.
-  <br><span id="verTag">v1.5</span>
+  <br><span id="verTag">v1.6</span>
 </footer>
 
 <script>
@@ -708,9 +748,13 @@ function makeCard(item){
   const card = document.createElement('div');
   card.className = 'card';
   card.innerHTML =
-    '<div class="stamp-mark">저장됨 ✓</div>' +
     '<div class="card-top">' +
       '<span class="fname" title="' + item.originalName + '">' + item.originalName + '</span>' +
+      '<span class="saved-tag">' +
+        '<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' +
+          '<path d="m5 13 4.5 4.5L19 7"/>' +
+        '</svg>저장됨' +
+      '</span>' +
       '<button class="remove" title="삭제">✕</button>' +
     '</div>' +
     '<div class="canvas-wrap"><span class="loading">불러오는 중…</span></div>' +
@@ -743,7 +787,7 @@ function makeCard(item){
     saveBtn: card.querySelector('.save-btn'),
     shareBtn: card.querySelector('.share-btn'),
     shareLbl: card.querySelector('.share-btn .lbl'),
-    stamp: card.querySelector('.stamp-mark'),
+    card: card,
     clearBtn: card.querySelector('.clear'),
     removeBtn: card.querySelector('.remove'),
     ocrStatus: card.querySelector('.ocr-status'),
@@ -1297,6 +1341,16 @@ function drawHighlight(ctx, item, ratio){
   ctx.strokeRect(x, y, w, h);
 }
 
+// 저장이 끝난 카드는 도장 대신 종이 가장자리에 청록 빛을 남긴다.
+function markSaved(item){
+  const card = item.els && item.els.card;
+  if (!card) return;
+  // 이미 저장된 카드를 다시 저장해도 빛이 한 번 더 피어오르도록 애니메이션을 되감는다
+  card.classList.remove('saved');
+  void card.offsetWidth;
+  card.classList.add('saved');
+}
+
 async function exportImageBlob(item){
   const { w, h, scale } = exportSize(item);
   const canvas = document.createElement('canvas');
@@ -1380,14 +1434,19 @@ async function saveItem(item){
     a.href = url; a.download = filename;
     document.body.appendChild(a); a.click(); a.remove();
     setTimeout(() => URL.revokeObjectURL(url), 4000);
-    item.els.stamp.classList.add('show');
+    markSaved(item);
+    // 눌린 버튼이 잠깐 결과를 말해주고 원래대로 돌아간다. 남는 표시는 카드의 빛이 맡는다.
+    item.els.saveBtn.disabled = false;
+    item.els.saveBtn.textContent = '저장됨';
+    clearTimeout(item.saveLabelTimer);
+    item.saveLabelTimer = setTimeout(() => { item.els.saveBtn.textContent = '저장'; }, 1800);
+    return;
   } catch(err){
     console.error(err);
     alert('저장 중 문제가 발생했어요. 콘솔을 확인해주세요.');
-  } finally{
-    item.els.saveBtn.disabled = false;
-    item.els.saveBtn.textContent = '저장';
   }
+  item.els.saveBtn.disabled = false;
+  item.els.saveBtn.textContent = '저장';
 }
 /* ---------- 전체 저장 (개별파일 / PDF묶음) ---------- */
 const bulkBar = document.getElementById('bulkBar');
@@ -1456,7 +1515,7 @@ btnEach.addEventListener('click', async () => {
         const files = prepared.map(p => new File([p.blob], p.filename, { type: p.blob.type }));
         if (navigator.canShare({ files })){
           await navigator.share({ files, title: '영수증 ' + prepared.length + '건' });
-          prepared.forEach(p => p.item.els.stamp.classList.add('show'));
+          prepared.forEach(p => markSaved(p.item));
           bulkStatusEl.textContent = prepared.length + '건 공유 완료 ✓';
           return;
         }
@@ -1504,7 +1563,7 @@ function startManualQueue(prepared){
     if (idx >= prepared.length) return;
     const p = prepared[idx];
     triggerDownload(p.blob, p.filename);
-    p.item.els.stamp.classList.add('show');
+    markSaved(p.item);
     idx++;
     render();
   }
@@ -1762,7 +1821,7 @@ document.getElementById('previewDownload').addEventListener('click', async () =>
   try{
     const blob = await pagesToPdfBlob(previewPages);
     triggerDownload(blob, buildBundleFilename(previewList));
-    previewList.forEach(it => it.els.stamp.classList.add('show'));
+    previewList.forEach(it => markSaved(it));
     closePdfPreview();
   } catch(err){
     console.error(err);
