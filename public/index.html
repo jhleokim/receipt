@@ -10,6 +10,7 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf-lib/1.17.1/pdf-lib.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
+<script src="/receipt-ocr.js"></script>
 <style>
   /* =========================================================
      감열지 영수증에서 가져온 디자인 시스템.
@@ -276,13 +277,20 @@
     transition:border-color .15s, color .15s;
   }
   .hl-row .clear:hover{border-color:var(--line-strong); color:var(--ink);}
+  .hl-options{display:flex; align-items:center; gap:var(--s2); margin-top:var(--s2); font-size:var(--t-xs); color:var(--ink-2);}
+  .hl-options select{padding:var(--s1) var(--s2); font:inherit; color:var(--ink); background:var(--paper); border:1px solid var(--line-strong); border-radius:var(--r1);}
+  .hl-hint{margin:var(--s2) 0 0; font-size:var(--t-xs); color:var(--ink-3);}
+  .hl-regions{display:flex; flex-wrap:wrap; gap:var(--s1); margin-top:var(--s2);}
+  .hl-regions:empty{display:none;}
+  .hl-region{padding:var(--s1) var(--s2); font:inherit; font-size:var(--t-xs); color:var(--stamp); background:rgba(179,49,44,.1); border:1px solid var(--line); border-radius:var(--r1); cursor:pointer;}
+  .hl-row button:disabled,.ocr-retry:disabled{opacity:.5; cursor:default;}
 
   .ocr-row{
     display:flex; justify-content:space-between; align-items:center; gap:var(--s2);
     min-height:20px; margin-top:var(--s2);
     font-size:var(--t-xs); color:var(--ink-3);
   }
-  .ocr-row .ocr-status{overflow:hidden; text-overflow:ellipsis; white-space:nowrap;}
+  .ocr-row .ocr-status{min-width:0; overflow-wrap:anywhere;}
   .ocr-row button.ocr-retry{
     flex-shrink:0; padding:0; border:none; background:none;
     color:var(--stamp); font-family:inherit; font-size:var(--t-xs);
@@ -758,8 +766,11 @@ function makeCard(item){
       '<button class="remove" title="삭제">✕</button>' +
     '</div>' +
     '<div class="canvas-wrap"><span class="loading">불러오는 중…</span></div>' +
-    '<div class="hl-row"><button class="hl-toggle" type="button">영역 표시하기</button><button class="clear" type="button">지우기</button></div>' +
-    '<div class="ocr-row"><span class="ocr-status"></span><button class="ocr-retry">다시 인식</button></div>' +
+    '<div class="hl-row"><button class="hl-toggle" type="button" disabled aria-pressed="false">영역 표시하기</button><button class="undo clear" type="button" disabled>되돌리기</button><button class="clear-all clear" type="button" disabled>전체 지우기</button></div>' +
+    '<div class="hl-options"><label>새 영역의 항목 <select class="hl-field"><option value="auto">자동 판단</option><option value="date">날짜</option><option value="place">장소</option><option value="amount">금액</option></select></label></div>' +
+    '<p class="hl-hint">날짜·상호·최종금액을 각각 드래그한 뒤 다시 인식하세요. 여러 영역을 표시할 수 있어요.</p>' +
+    '<div class="hl-regions" aria-label="표시한 영역"></div>' +
+    '<div class="ocr-row"><span class="ocr-status" role="status"></span><button class="ocr-retry" type="button" disabled>전체 다시 인식</button></div>' +
     '<div class="fields">' +
       '<div class="field"><label>결제일자</label><input type="date" class="in-date"></div>' +
       '<div class="field"><label>이름</label><input type="text" class="in-name" placeholder="(선택)"></div>' +
@@ -788,7 +799,10 @@ function makeCard(item){
     shareBtn: card.querySelector('.share-btn'),
     shareLbl: card.querySelector('.share-btn .lbl'),
     card: card,
-    clearBtn: card.querySelector('.clear'),
+    clearBtn: card.querySelector('.clear-all'),
+    undoBtn: card.querySelector('.undo'),
+    hlField: card.querySelector('.hl-field'),
+    hlRegions: card.querySelector('.hl-regions'),
     removeBtn: card.querySelector('.remove'),
     ocrStatus: card.querySelector('.ocr-status'),
     ocrRetry: card.querySelector('.ocr-retry'),
@@ -797,10 +811,15 @@ function makeCard(item){
 
   // 영역 표시 모드: 버튼을 눌러야만 드래그가 활성화됨(모바일 스크롤과 충돌 방지)
   item.highlightMode = false;
+  item.fieldEdits = { date: 0, place: 0, amount: 0 };
+  item.regionRevision = 0;
+  item.ocrVersion = 0;
   item.setHLMode = function(on){
     item.highlightMode = on;
+    if (!on && item.cancelDrag) item.cancelDrag();
     item.els.hlToggle.classList.toggle('active', on);
-    item.els.hlToggle.textContent = on ? '표시 중 · 금액 위를 드래그' : '영역 표시하기';
+    item.els.hlToggle.setAttribute('aria-pressed', String(on));
+    item.els.hlToggle.textContent = on ? '표시 끝내기' : '영역 표시하기';
     if (item.canvas){
       item.canvas.style.touchAction = on ? 'none' : 'pan-y';
       item.canvas.style.cursor = on ? 'crosshair' : 'default';
@@ -811,12 +830,18 @@ function makeCard(item){
   // 이름은 기본적으로 비워둔다 (필요한 사람만 직접 입력)
 
   [item.els.date, item.els.name, item.els.place, item.els.amount].forEach(inp => {
-    inp.addEventListener('input', () => updateFnamePreview(item));
+    inp.addEventListener('input', () => {
+      for (const field of ['date', 'place', 'amount']){
+        if (item.els[field] === inp) item.fieldEdits[field]++;
+      }
+      updateFnamePreview(item);
+    });
   });
   updateFnamePreview(item);
 
-  item.els.clearBtn.addEventListener('click', () => { item.rect = null; redraw(item); });
-  item.els.removeBtn.addEventListener('click', () => { item.alive = false; card.remove(); updateBulkBar(); });
+  item.els.clearBtn.addEventListener('click', () => { item.cancelDrag?.(); item.rects = []; regionsChanged(item); });
+  item.els.undoBtn.addEventListener('click', () => { item.cancelDrag?.(); item.rects.pop(); regionsChanged(item); });
+  item.els.removeBtn.addEventListener('click', () => { item.cancelDrag?.(); item.alive = false; card.remove(); updateBulkBar(); });
   item.els.saveBtn.addEventListener('click', () => saveItem(item));
 
   // 공유 시트를 띄울 수 없는 브라우저에서는 버튼을 아예 없앤다
@@ -829,9 +854,8 @@ function makeCard(item){
   }
 
   item.els.ocrRetry.addEventListener('click', () => {
-    item.els.date.value = ''; item.els.place.value = ''; item.els.amount.value = '';
-    updateFnamePreview(item);
-    queueOCR(item);
+    item.setHLMode(false);
+    queueOCR(item, { retry: true });
   });
 
   cardsEl.appendChild(card);
@@ -857,6 +881,7 @@ async function setupCanvas(item, drawW, drawH, drawFn){
   markScrollable(item);
   redraw(item);
   attachDrag(item);
+  item.els.hlToggle.disabled = false;
   item.setHLMode(false);
   queueOCR(item);
 }
@@ -874,54 +899,91 @@ window.addEventListener('resize', () => {
 });
 
 function redraw(item){
+  if (!item.canvas) return;
   const ctx = item.canvas.getContext('2d');
   ctx.clearRect(0,0,item.canvas.width, item.canvas.height);
   ctx.drawImage(item.baseCanvas, 0, 0);
-  if (item.rect){
-    ctx.fillStyle = 'rgba(255,228,77,0.5)';
-    ctx.fillRect(item.rect.x, item.rect.y, item.rect.w, item.rect.h);
-    ctx.strokeStyle = 'rgba(179,49,44,0.9)';
-    ctx.lineWidth = 2;
-    ctx.strokeRect(item.rect.x, item.rect.y, item.rect.w, item.rect.h);
-  }
+  drawHighlight(ctx, item, 1, item.draftRect ? [...item.rects, item.draftRect] : item.rects);
+}
+
+function updateRegionControls(item){
+  const count = item.rects.length;
+  item.els.clearBtn.disabled = item.els.undoBtn.disabled = !count;
+  item.els.ocrRetry.textContent = count ? '표시 영역 다시 인식 (' + count + ')' : '전체 다시 인식';
+  item.els.hlRegions.replaceChildren();
+  item.rects.forEach((rect, index) => {
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.className = 'hl-region';
+    const label = (index + 1) + ' · ' + OCR_FIELD_LABELS[rect.field];
+    button.textContent = label + ' ×';
+    button.setAttribute('aria-label', label + ' 영역 삭제');
+    button.addEventListener('click', () => { item.rects.splice(index, 1); regionsChanged(item); });
+    item.els.hlRegions.appendChild(button);
+  });
+}
+
+function regionsChanged(item){
+  item.regionRevision++;
+  updateRegionControls(item);
+  redraw(item);
+  item.els.ocrStatus.textContent = item.rects.length
+    ? '표시 영역을 다시 인식하면 해당 항목을 교정합니다'
+    : '전체 영수증을 다시 인식할 수 있어요';
 }
 
 function attachDrag(item){
   const c = item.canvas;
-  let dragging = false, sx = 0, sy = 0;
+  let pointerId = null, sx = 0, sy = 0;
   function pos(e){
     const r = c.getBoundingClientRect();
-    const t = e.touches ? e.touches[0] : e;
     return {
-      x: (t.clientX - r.left) * (c.width / r.width),
-      y: (t.clientY - r.top) * (c.height / r.height)
+      x: Math.max(0, Math.min(c.width, (e.clientX - r.left) * c.width / r.width)),
+      y: Math.max(0, Math.min(c.height, (e.clientY - r.top) * c.height / r.height))
     };
   }
   function down(e){
-    if (!item.highlightMode) return;
-    e.preventDefault(); dragging = true; const p = pos(e); sx = p.x; sy = p.y;
+    if (!item.highlightMode || pointerId !== null || !e.isPrimary || e.button !== 0) return;
+    e.preventDefault();
+    pointerId = e.pointerId;
+    const p = pos(e); sx = p.x; sy = p.y;
+    c.setPointerCapture(pointerId);
   }
   function move(e){
-    if (!item.highlightMode || !dragging) return;
+    if (e.pointerId !== pointerId) return;
     e.preventDefault();
     const p = pos(e);
-    item.rect = { x: Math.min(sx,p.x), y: Math.min(sy,p.y), w: Math.abs(p.x-sx), h: Math.abs(p.y-sy) };
+    item.draftRect = { x: Math.min(sx,p.x), y: Math.min(sy,p.y), w: Math.abs(p.x-sx), h: Math.abs(p.y-sy), field: item.els.hlField.value };
     redraw(item);
   }
-  function up(){
-    if (dragging){ dragging = false; item.setHLMode(false); }
+  item.cancelDrag = () => {
+    const id = pointerId;
+    pointerId = null;
+    item.draftRect = null;
+    if (id !== null && c.hasPointerCapture(id)) c.releasePointerCapture(id);
+    redraw(item);
+  };
+  function up(e){
+    if (e.pointerId !== pointerId) return;
+    move(e);
+    const rect = item.draftRect;
+    item.cancelDrag();
+    // 클릭이나 아주 작은 드래그는 영역으로 만들지 않는다.
+    if (rect && rect.w >= 4 && rect.h >= 4){
+      item.rects.push(rect);
+      regionsChanged(item);
+    }
   }
-  c.addEventListener('mousedown', down);
-  c.addEventListener('mousemove', move);
-  window.addEventListener('mouseup', up);
-  c.addEventListener('touchstart', down, {passive:false});
-  c.addEventListener('touchmove', move, {passive:false});
-  c.addEventListener('touchend', up);
+  c.addEventListener('pointerdown', down);
+  c.addEventListener('pointermove', move);
+  c.addEventListener('pointerup', up);
+  c.addEventListener('pointercancel', item.cancelDrag);
+  c.addEventListener('lostpointercapture', item.cancelDrag);
 }
 
 /* ---------- 이미지 / PDF 로드 ---------- */
 function addImageItem(file){
-  const item = { id: ++seq, type: 'image', originalName: file.name, rect: null, alive: true };
+  const item = { id: ++seq, type: 'image', originalName: file.name, rects: [], alive: true };
   makeCard(item);
   items.push(item);
   updateBulkBar();
@@ -941,7 +1003,7 @@ function addImageItem(file){
 }
 
 async function addPdfItem(file){
-  const item = { id: ++seq, type: 'pdf', originalName: file.name, rect: null, alive: true };
+  const item = { id: ++seq, type: 'pdf', originalName: file.name, rects: [], alive: true };
   makeCard(item);
   items.push(item);
   updateBulkBar();
@@ -968,351 +1030,6 @@ async function addPdfItem(file){
   }
 }
 
-/* ---------- OCR 자동 인식 ---------- */
-let ocrQueue = Promise.resolve();
-function queueOCR(item){
-  ocrQueue = ocrQueue.then(() => doOCR(item)).catch(err => console.error(err));
-}
-
-async function doOCR(item){
-  if (!item.els || !item.els.ocrStatus) return;
-  item.els.ocrStatus.textContent = 'OCR 인식 중…';
-  try{
-    const source = item.type === 'image' ? item.img : item.baseCanvas;
-    const srcW = item.type === 'image' ? item.naturalWidth : item.baseCanvas.width;
-    const result = await Tesseract.recognize(source, 'kor+eng');
-    const text = result.data.text || '';
-
-    // 인식된 단어들의 실제 글자 높이(px)를 재둬서, PDF로 묶을 때
-    // "이 영수증을 몇 mm로 앉혀야 글씨가 읽히는지" 계산에 쓴다.
-    item.textPxRatio = measureTextRatio(result.data, srcW);
-
-    const parsed = parseReceiptText(text);
-    if (!item.els.date.value && parsed.date) item.els.date.value = parsed.date;
-    if (!item.els.place.value && parsed.place) item.els.place.value = parsed.place;
-    if (!item.els.amount.value && parsed.amount) item.els.amount.value = parsed.amount;
-    updateFnamePreview(item);
-
-    // 무엇을 채웠고 무엇을 못 채웠는지 분명히 알려준다
-    const filled = [];
-    if (parsed.date) filled.push('날짜');
-    if (parsed.place) filled.push('장소');
-    if (parsed.amount) filled.push('금액');
-    item.els.ocrStatus.textContent = filled.length
-      ? (filled.join('·') + ' 자동입력됨 · 확인해주세요')
-      : '자동으로 읽지 못했어요 · 직접 입력해주세요';
-  } catch(err){
-    console.error(err);
-    item.els.ocrStatus.textContent = 'OCR 인식 실패';
-  }
-}
-
-// 글자높이 ÷ 이미지폭. 이 값이 클수록 글씨가 큰 영수증이다.
-// 예: 0.035 이면 이미지 폭의 3.5% 가 글자 한 줄 높이.
-function measureTextRatio(data, imgW){
-  // Tesseract 버전에 따라 words 위치가 달라서 몇 군데를 훑는다
-  let words = data.words || [];
-  if (!words.length && data.lines) words = data.lines.flatMap(l => l.words || []);
-  if (!words.length && data.blocks){
-    words = data.blocks.flatMap(b =>
-      (b.paragraphs || []).flatMap(p => (p.lines || []).flatMap(l => l.words || []))
-    );
-  }
-  const good = words.filter(w =>
-    w && w.confidence > 60 && w.bbox && (w.bbox.y1 - w.bbox.y0) > 3
-  );
-  if (good.length < 5 || !imgW) return null;
-  const heights = good.map(w => w.bbox.y1 - w.bbox.y0).sort((a,b) => a-b);
-  const median = heights[Math.floor(heights.length / 2)];
-  const ratio = median / imgW;
-  // 말도 안 되는 값은 버림(글자 대신 로고·테두리를 잡은 경우)
-  if (ratio < 0.008 || ratio > 0.15) return null;
-  return ratio;
-}
-
-/* ========== 영수증 텍스트 파싱 ==========
-   OCR이 뱉은 날것의 텍스트에서 결제일자 / 결제장소 / 최종결제금액을 뽑아낸다.
-   원칙: 확신이 없으면 채우지 않는다. 엉뚱한 값이 들어가면 사용자가 지우는 게 더 번거롭다.
-*/
-
-/* ---------- 공통 유틸 ---------- */
-
-// OCR은 글자 사이에 공백을 멋대로 끼워 넣는다. 키워드 매칭은 공백 제거 후에 한다.
-function compact(s){ return (s || '').replace(/\s+/g, ''); }
-
-// Tesseract는 자간이 넓은 영수증 글씨를 "1 2 , 8 0 0" / "투 썸 플 레 이 스"처럼
-// 한 글자씩 떼어 놓는 일이 잦다. 그런 줄만 골라서 도로 붙인다.
-// (단순히 모든 공백을 지우면 "아메리카노 2 9,000" 의 수량과 금액이 붙어버리므로,
-//  한 글자+한 칸이 4번 이상 반복되는 "확실히 자간이 벌어진" 줄에만 적용한다.)
-function normalizeSpacedOut(line){
-  let out = line;
-  if (/(?:[\d,.]\s){3,}[\d,.]/.test(out)){
-    out = out.replace(/([\d,.])\s(?=[\d,.])/g, '$1');
-  }
-  if (/(?:[\uAC00-\uD7A3]\s){3,}[\uAC00-\uD7A3]/.test(out)){
-    out = out.replace(/([\uAC00-\uD7A3])\s(?=[\uAC00-\uD7A3])/g, '$1');
-  }
-  return out;
-}
-
-// 금액으로 오인하기 쉬운 것들을 미리 지운다.
-// (사업자번호, 전화번호, 카드번호, 날짜, 시각, 승인번호 등)
-function stripNonMoney(line){
-  return line
-    .replace(/\d{3}\s*-\s*\d{2}\s*-\s*\d{5}/g, ' ')            // 사업자등록번호
-    .replace(/\d{2,4}\s*-\s*\d{3,4}\s*-\s*\d{4}/g, ' ')         // 전화번호
-    .replace(/[\d*]{4}\s*-\s*[\d*]{4}\s*-\s*[\d*]{4}\s*-\s*[\d*]{4}/g, ' ') // 카드번호
-    .replace(/\d{4}[-./]\d{1,2}[-./]\d{1,2}/g, ' ')             // 날짜
-    .replace(/\d{1,2}\s*:\s*\d{2}(\s*:\s*\d{2})?/g, ' ')        // 시각
-    .replace(/(승인|거래|전표|단말기|가맹점)\s*(번호|NO|No)?\s*[:：]?\s*[\d-]+/gi, ' ')
-    .replace(/\d{10,}/g, ' ');                                   // 지나치게 긴 숫자열
-}
-
-// 한 줄에서 "돈처럼 생긴 숫자"들을 모두 뽑는다.
-function moneyCandidates(line){
-  const cleaned = stripNonMoney(line);
-  const out = [];
-  const re = /\d{1,3}(?:,\d{3})+|\d{3,9}/g;
-  let m;
-  while ((m = re.exec(cleaned)) !== null){
-    const hasComma = m[0].includes(',');
-    const v = parseInt(m[0].replace(/,/g, ''), 10);
-    if (isNaN(v)) continue;
-    if (v < 100 || v > 50000000) continue;   // 현실적인 결제금액 범위
-    out.push({ value: v, hasComma });
-  }
-  return out;
-}
-
-/* ---------- 금액 ---------- */
-
-// 영수증마다 최종 금액을 부르는 이름이 다르다. 신뢰도 순으로 계층을 나눈다.
-// 위 계층에서 찾으면 아래는 보지 않는다.
-const AMOUNT_TIERS = [
-  // 3순위 가중치: "이게 최종 낼 돈"이라고 못박은 표현
-  { w: 3, re: /(총청구액|청구금액|청구액|최종결제금액|실결제금액|결제금액|결제할금액|카드승인금액|승인금액|총결제금액|납부금액|납부액|총납부액|받을금액|최종금액|최종요금|총요금|결제대상금액)/ },
-  // 2순위: 합계류
-  { w: 2, re: /(합계금액|총합계|판매총액|금액계|합계|총계|총액|totalamount|amountdue|total)/i },
-  // 1순위: 약한 단서 (다른 게 하나도 없을 때만)
-  { w: 1, re: /(소계|subtotal|금액)/i }
-];
-
-// 이 단어가 있는 줄의 숫자는 최종금액이 아니다.
-const AMOUNT_NEG = /(공급가액|공급가|부가세|부가가치세|세액|면세|과세|봉사료|받은금액|받은돈|거스름|잔액|잔돈|할인|포인트|적립|마일리지|잔여|쿠폰|현금영수증|이전금액|기존금액)/;
-
-function extractAmount(text){
-  const lines = text.split('\n').map(l => l.trim()).filter(Boolean);
-
-  // 계층별로 후보를 모은다
-  const found = { 3: [], 2: [], 1: [] };
-
-  for (let i = 0; i < lines.length; i++){
-    const c = compact(lines[i]);
-    if (AMOUNT_NEG.test(c)) continue;
-
-    let tier = 0;
-    for (const t of AMOUNT_TIERS){
-      if (t.re.test(c)){ tier = t.w; break; }
-    }
-    if (!tier) continue;
-
-    // 같은 줄에서 숫자 찾기
-    let cands = moneyCandidates(lines[i]);
-
-    // 줄 끝에 금액이 없으면 다음 1~2줄을 본다 (표 형태 영수증 대응)
-    if (!cands.length){
-      for (let j = i + 1; j <= Math.min(i + 2, lines.length - 1); j++){
-        const nextC = compact(lines[j]);
-        if (AMOUNT_NEG.test(nextC)) break;
-        cands = moneyCandidates(lines[j]);
-        if (cands.length) break;
-      }
-    }
-    if (!cands.length) continue;
-
-    // 한 줄에 여러 숫자면 가장 큰 값 (수량×단가=금액 형태 대비)
-    const best = cands.reduce((a, b) => (b.value > a.value ? b : a));
-    found[tier].push({ value: best.value, line: i, hasComma: best.hasComma });
-  }
-
-  for (const tier of [3, 2, 1]){
-    const list = found[tier];
-    if (!list.length) continue;
-    // 같은 계층이 여러 번 나오면 아래쪽(영수증 끝)에 가까운 것이 최종금액이다
-    const last = list.reduce((a, b) => (b.line >= a.line ? b : a));
-    return String(last.value);
-  }
-
-  // 키워드를 하나도 못 찾은 경우:
-  // 영수증에서 최종금액은 보통 합계·결제·승인 자리에 2~3번 반복해서 찍힌다.
-  // 그래서 "가장 자주 등장한 금액"이 최댓값보다 훨씬 안전한 추측이다.
-  const freq = new Map();
-  lines.forEach(l => {
-    moneyCandidates(l).forEach(c => {
-      // 콤마가 있는 숫자가 금액일 확률이 높아 가중치를 더 준다
-      freq.set(c.value, (freq.get(c.value) || 0) + (c.hasComma ? 1.5 : 1));
-    });
-  });
-  if (!freq.size) return '';
-
-  let bestVal = '', bestScore = -1;
-  for (const [value, score] of freq){
-    // 동점이면 큰 금액을 택한다
-    if (score > bestScore || (score === bestScore && value > bestVal)){
-      bestScore = score; bestVal = value;
-    }
-  }
-  // 딱 한 번만 등장한 숫자뿐이라면 확신이 없으니 비워둔다
-  if (bestScore < 1.5) return '';
-  return String(bestVal);
-}
-
-/* ---------- 날짜 ---------- */
-
-// 사업자등록번호(105-22-33445)나 전화번호를 날짜로 착각하는 일이 잦다.
-// 먼저 지워두고, 남은 후보를 전부 훑어서 유효한 첫 번째 날짜를 쓴다.
-function stripNonDate(text){
-  return text
-    .replace(/\d{3}\s*-\s*\d{2}\s*-\s*\d{5}/g, ' ')       // 사업자등록번호
-    .replace(/\d{2,4}\s*-\s*\d{3,4}\s*-\s*\d{4}/g, ' ')    // 전화번호
-    .replace(/[\d*]{4}\s*-\s*[\d*]{4}\s*-\s*[\d*]{4}\s*-\s*[\d*]{4}/g, ' '); // 카드번호
-}
-
-function toValidDate(y, mo, d){
-  if (y.length === 2) y = '20' + y;
-  if (y.length !== 4) return '';
-  mo = mo.padStart(2, '0');
-  d = d.padStart(2, '0');
-  const yn = Number(y), mn = Number(mo), dn = Number(d);
-  if (yn < 2000 || yn > 2099) return '';
-  if (mn < 1 || mn > 12) return '';
-  if (dn < 1 || dn > 31) return '';
-  return y + '-' + mo + '-' + d;
-}
-
-function extractDate(text){
-  const src = stripNonDate(text);
-
-  // 1) "거래일시 / 승인일시" 같은 라벨이 붙은 날짜가 가장 믿을 만하다
-  const kw = /(?:거래일시|승인일시|결제일시|이용일시|매출일시|주문일시|거래일자|승인일자|결제일자|판매일|일\s*시|날짜)[^\d]{0,6}(\d{2,4})\s*[.\-\/년]\s*(\d{1,2})\s*[.\-\/월]\s*(\d{1,2})/g;
-  for (const m of src.matchAll(kw)){
-    const v = toValidDate(m[1], m[2], m[3]);
-    if (v) return v;
-  }
-
-  // 2) 라벨이 없으면 본문에서 날짜꼴을 차례로 검사한다
-  const gen = /(\d{2,4})\s*[.\-\/년]\s*(\d{1,2})\s*[.\-\/월]\s*(\d{1,2})\s*일?/g;
-  for (const m of src.matchAll(gen)){
-    const v = toValidDate(m[1], m[2], m[3]);
-    if (v) return v;
-  }
-  return '';
-}
-
-/* ---------- 결제장소 ---------- */
-
-// 상호가 아닌 게 확실한 줄들
-const PLACE_JUNK = /(영수증|매출전표|신용카드|체크카드|카드사|승인|거래|사업자|등록번호|대표자?|주소|전화|TEL|FAX|www|http|POS|단말기|일련번호|가맹점번호|고객용|가맹점용|반품|교환|환불|감사합니다|안녕|주문번호|테이블|영업시간|현금영수증|할부|일시불|공급가|부가세|합계|총액|금액|수량|단가|품명)/i;
-
-// 상호를 대놓고 알려주는 줄
-const PLACE_LABEL = /(?:상호명|상호|가맹점명|가맹점|점포명|지점명|매장명|사업장명)\s*[:：]?\s*(.{2,30})/;
-
-function cleanPlace(s){
-  return (s || '')
-    // 한글·영문·숫자와 최소한의 기호만 남기고 나머지(OCR 잡음)는 제거
-    .replace(/[^\uAC00-\uD7A3a-zA-Z0-9()&.\-'\s]/g, ' ')
-    .replace(/\s+/g, ' ')
-    .replace(/^[\s.\-'&()]+|[\s.\-'&()]+$/g, '')
-    .trim();
-}
-
-// 상호로 쓸 만한 문자열인지 판정
-function placeScore(s){
-  const t = cleanPlace(s);
-  if (t.length < 2 || t.length > 30) return -1;
-  if (PLACE_JUNK.test(t)) return -1;
-
-  const chars = t.replace(/\s/g, '');
-  if (!chars.length) return -1;
-
-  const hangul = (chars.match(/[\uAC00-\uD7A3]/g) || []).length;
-  const latin  = (chars.match(/[a-zA-Z]/g) || []).length;
-  const digits = (chars.match(/[0-9]/g) || []).length;
-  const letters = hangul + latin;
-
-  // 글자가 거의 없으면 상호가 아니다 (주소·번호·잡음)
-  if (letters < 2) return -1;
-  // 숫자가 절반 가까우면 주소나 번호일 가능성이 높다
-  if (digits / chars.length > 0.4) return -1;
-  // 인식 잡음 비율: 한글·영문·숫자가 아닌 글자가 많으면 버린다
-  if (letters / chars.length < 0.55) return -1;
-
-  let score = 10;
-  score += hangul > 0 ? 6 : 0;              // 한글 상호 우대
-  if (t.length >= 3 && t.length <= 12) score += 5;  // 상호는 대체로 짧다
-  else if (t.length <= 16) score += 2;
-  else if (t.length <= 22) score -= 2;      // 길면 상호가 아닐 확률이 오른다
-  else score -= 4;
-  if (/(점|지점|店)$/.test(chars)) score += 3;       // "○○강남점"
-  if (/(주식회사|㈜|\(주\))/.test(chars)) score += 2;
-  score -= digits;                          // 숫자는 조금씩 감점
-  return score;
-}
-
-function extractPlace(text, lines){
-  const raw = lines || text.split('\n').map(l => l.trim()).filter(Boolean);
-
-  // 1) "상호: ○○○" 처럼 명시된 줄이 있으면 최우선
-  for (const line of raw){
-    const m = line.match(PLACE_LABEL);
-    if (m){
-      const cand = cleanPlace(m[1]);
-      if (placeScore(cand) > 0) return truncatePlace(cand);
-    }
-  }
-
-  // 2) 없으면 상단 8줄 중 가장 상호다운 줄을 고른다
-  let best = '', bestScore = 0;
-  const head = raw.slice(0, 8);
-  for (let i = 0; i < head.length; i++){
-    const cand = cleanPlace(head[i]);
-    let s = placeScore(cand);
-    if (s <= 0) continue;
-    s += (8 - i);   // 위쪽 줄일수록 상호일 확률이 높다
-    if (s > bestScore){ bestScore = s; best = cand; }
-  }
-
-  // 확신이 없으면 차라리 비워둔다 (잘못된 긴 문자열을 지우는 게 더 번거롭다)
-  if (bestScore < 14) return '';
-  return truncatePlace(best);
-}
-
-// 너무 길면 사용자가 지우기 번거로우니 앞쪽 핵심만 남긴다
-function truncatePlace(s){
-  const t = cleanPlace(s);
-  if (t.length <= 16) return t;
-  const cut = t.slice(0, 16);
-  const sp = cut.lastIndexOf(' ');
-  return (sp >= 6 ? cut.slice(0, sp) : cut).trim();
-}
-
-/* ---------- 통합 ---------- */
-
-function parseReceiptText(rawText){
-  // 자간이 벌어진 줄을 먼저 정상화한 뒤, 모든 추출기가 같은 텍스트를 보게 한다
-  const lines = (rawText || '')
-    .split('\n')
-    .map(l => normalizeSpacedOut(l.trim()))
-    .filter(Boolean);
-  const text = lines.join('\n');
-
-  return {
-    date: extractDate(text),
-    place: extractPlace(text, lines),
-    amount: extractAmount(text)
-  };
-}
-
 /* ---------- 저장(하이라이트 합성 + 다운로드) ---------- */
 // 내보낼 때 원본 해상도 그대로 캔버스를 만들면 폰에서 렌더러가 메모리로 죽는다.
 // 12MP 사진이면 캔버스 하나가 RGBA 로 약 49MB — 이미 올라와 있는 원본 이미지에 그만큼이 더 얹힌다.
@@ -1330,15 +1047,16 @@ function exportSize(item){
 }
 
 // 하이라이트 사각형을 미리보기 좌표에서 내보내기 좌표로 옮겨 그린다
-function drawHighlight(ctx, item, ratio){
-  if (!item.rect) return;
-  const x = item.rect.x * ratio, y = item.rect.y * ratio;
-  const w = item.rect.w * ratio, h = item.rect.h * ratio;
-  ctx.fillStyle = 'rgba(255,228,77,0.5)';
-  ctx.fillRect(x, y, w, h);
+function drawHighlight(ctx, item, ratio, rects = item.rects){
+  ctx.fillStyle = 'rgba(179,49,44,0.1)';
   ctx.strokeStyle = 'rgba(179,49,44,0.9)';
   ctx.lineWidth = Math.max(2, 2 * ratio * 0.3);
-  ctx.strokeRect(x, y, w, h);
+  for (const rect of rects){
+    const x = rect.x * ratio, y = rect.y * ratio;
+    const w = rect.w * ratio, h = rect.h * ratio;
+    ctx.fillRect(x, y, w, h);
+    ctx.strokeRect(x, y, w, h);
+  }
 }
 
 // 저장이 끝난 카드는 도장 대신 종이 가장자리에 청록 빛을 남긴다.
@@ -1371,14 +1089,16 @@ async function exportImageBlob(item){
 async function exportPdfBlob(item){
   const doc = await PDFDocument.load(item.pdfBytes);
   const page = doc.getPage(0);
-  if (item.rect){
+  for (const rect of item.rects){
     const s = item.previewScale;
-    const pdfX = item.rect.x / s;
-    const pdfTop = item.rect.y / s;
-    const pdfW = item.rect.w / s;
-    const pdfH = item.rect.h / s;
+    const pdfX = rect.x / s;
+    const pdfTop = rect.y / s;
+    const pdfW = rect.w / s;
+    const pdfH = rect.h / s;
     const pdfY = item.pageHeightPt - (pdfTop + pdfH);
-    page.drawRectangle({ x: pdfX, y: pdfY, width: pdfW, height: pdfH, color: rgb(1, 0.894, 0.302), opacity: 0.5 });
+    page.drawRectangle({ x: pdfX, y: pdfY, width: pdfW, height: pdfH,
+      color: rgb(179/255, 49/255, 44/255), opacity: 0.1,
+      borderColor: rgb(179/255, 49/255, 44/255), borderOpacity: 0.9, borderWidth: 2 / s });
   }
   const bytes = await doc.save();
   return new Blob([bytes], { type: 'application/pdf' });
