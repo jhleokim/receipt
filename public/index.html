@@ -577,7 +577,7 @@
 <footer>
   파일은 저장 전까지 이 브라우저와 임시 세션 안에서만 처리되며,<br>
   폰 사진은 PC가 받아가는 즉시 서버에서 삭제됩니다.
-  <br><span id="verTag">v1.4</span>
+  <br><span id="verTag">v1.5</span>
 </footer>
 
 <script>
@@ -1270,22 +1270,48 @@ function parseReceiptText(rawText){
 }
 
 /* ---------- 저장(하이라이트 합성 + 다운로드) ---------- */
+// 내보낼 때 원본 해상도 그대로 캔버스를 만들면 폰에서 렌더러가 메모리로 죽는다.
+// 12MP 사진이면 캔버스 하나가 RGBA 로 약 49MB — 이미 올라와 있는 원본 이미지에 그만큼이 더 얹힌다.
+// 공유 시트가 뜨며 탭이 백그라운드로 갈 때 이 상태면 안드로이드가 탭을 날려버리고,
+// 공유 시트는 사라진 파일을 기다리며 영원히 돌게 된다.
+// 긴 변 2000px 은 upload.html 이 폰 사진에 이미 쓰고 있는 값이고, 영수증을 읽는 데 충분하다.
+const MAX_EXPORT = 2000;
+function exportSize(item){
+  const scale = Math.min(1, MAX_EXPORT / Math.max(item.naturalWidth, item.naturalHeight));
+  return {
+    w: Math.max(1, Math.round(item.naturalWidth * scale)),
+    h: Math.max(1, Math.round(item.naturalHeight * scale)),
+    scale,
+  };
+}
+
+// 하이라이트 사각형을 미리보기 좌표에서 내보내기 좌표로 옮겨 그린다
+function drawHighlight(ctx, item, ratio){
+  if (!item.rect) return;
+  const x = item.rect.x * ratio, y = item.rect.y * ratio;
+  const w = item.rect.w * ratio, h = item.rect.h * ratio;
+  ctx.fillStyle = 'rgba(255,228,77,0.5)';
+  ctx.fillRect(x, y, w, h);
+  ctx.strokeStyle = 'rgba(179,49,44,0.9)';
+  ctx.lineWidth = Math.max(2, 2 * ratio * 0.3);
+  ctx.strokeRect(x, y, w, h);
+}
+
 async function exportImageBlob(item){
+  const { w, h, scale } = exportSize(item);
   const canvas = document.createElement('canvas');
-  canvas.width = item.naturalWidth;
-  canvas.height = item.naturalHeight;
+  canvas.width = w;
+  canvas.height = h;
   const ctx = canvas.getContext('2d');
-  ctx.drawImage(item.img, 0, 0, item.naturalWidth, item.naturalHeight);
-  if (item.rect){
-    const r = 1 / item.previewScale;
-    const x = item.rect.x * r, y = item.rect.y * r, w = item.rect.w * r, h = item.rect.h * r;
-    ctx.fillStyle = 'rgba(255,228,77,0.5)';
-    ctx.fillRect(x, y, w, h);
-    ctx.strokeStyle = 'rgba(179,49,44,0.9)';
-    ctx.lineWidth = Math.max(2, 2*r*0.3);
-    ctx.strokeRect(x, y, w, h);
-  }
-  return new Promise(res => canvas.toBlob(b => res(b), 'image/jpeg', 0.92));
+  ctx.drawImage(item.img, 0, 0, w, h);
+  drawHighlight(ctx, item, scale / item.previewScale);
+
+  const blob = await new Promise(res => canvas.toBlob(b => res(b), 'image/jpeg', 0.92));
+  // 폰에서는 이 메모리를 GC 까지 들고 있으면 늦다. 바로 반납한다.
+  canvas.width = canvas.height = 0;
+  // 메모리가 모자라면 toBlob 이 null 을 준다. 그대로 두면 "null" 이라고 적힌 파일이 저장된다.
+  if (!blob) throw new Error('이미지를 만들지 못했습니다 (메모리 부족)');
+  return blob;
 }
 
 async function exportPdfBlob(item){
@@ -1306,15 +1332,30 @@ async function exportPdfBlob(item){
 
 async function shareItem(item){
   const btn = item.els.shareBtn;
+  if (btn.disabled) return; // 연타로 파일을 여러 번 만들지 않게
+
   btn.disabled = true;
   item.els.shareLbl.textContent = '준비 중…';
+
+  let file;
   try{
     const blob = item.type === 'pdf' ? await exportPdfBlob(item) : await exportImageBlob(item);
-    const filename = buildFilename(item);
-    const file = new File([blob], filename, { type: blob.type });
+    file = new File([blob], buildFilename(item), { type: blob.type });
+  } catch(err){
+    console.error(err);
+    alert('공유할 파일을 만들지 못했어요. 대신 저장 버튼을 사용해주세요.');
+    return;
+  } finally{
+    // 여기서 되돌려 둔다. 공유 시트가 뜨면 화면은 시스템이 가져가고,
+    // 안드로이드에서 share 프라미스가 끝내 안 돌아오는 경우도 있어서
+    // 시트를 기다리는 동안 버튼을 잠가두면 영영 못 쓰게 된다.
+    btn.disabled = false;
+    item.els.shareLbl.textContent = '공유';
+  }
 
+  try{
     if (!navigator.canShare({ files: [file] })) throw new Error('cannot share this file');
-    await navigator.share({ files: [file], title: filename });
+    await navigator.share({ files: [file], title: file.name });
   } catch(err){
     // 사용자가 공유 시트를 그냥 닫은 것은 실패가 아니다
     if (err && err.name === 'AbortError') return;
@@ -1325,9 +1366,6 @@ async function shareItem(item){
     }
     console.error(err);
     alert('공유하지 못했어요. 대신 저장 버튼을 사용해주세요.');
-  } finally{
-    btn.disabled = false;
-    item.els.shareLbl.textContent = '공유';
   }
 }
 
@@ -1512,18 +1550,13 @@ function decideColumns(list){
 // 하이라이트까지 합성된 원본 해상도 캔버스
 async function composeCanvas(item){
   if (item.type === 'image'){
+    // PDF 로 묶을 때도 원본 해상도로 펼치면 폰에서 메모리로 죽는다 (exportSize 주석 참고)
+    const { w, h, scale } = exportSize(item);
     const c = document.createElement('canvas');
-    c.width = item.naturalWidth; c.height = item.naturalHeight;
+    c.width = w; c.height = h;
     const ctx = c.getContext('2d');
-    ctx.drawImage(item.img, 0, 0, c.width, c.height);
-    if (item.rect){
-      const r = 1 / item.previewScale;
-      ctx.fillStyle = 'rgba(255,228,77,0.5)';
-      ctx.fillRect(item.rect.x*r, item.rect.y*r, item.rect.w*r, item.rect.h*r);
-      ctx.strokeStyle = 'rgba(179,49,44,0.9)';
-      ctx.lineWidth = Math.max(2, r * 0.6);
-      ctx.strokeRect(item.rect.x*r, item.rect.y*r, item.rect.w*r, item.rect.h*r);
-    }
+    ctx.drawImage(item.img, 0, 0, w, h);
+    drawHighlight(ctx, item, scale / item.previewScale);
     return c;
   }
   const scale = 2;
@@ -1531,15 +1564,7 @@ async function composeCanvas(item){
   const c = document.createElement('canvas');
   c.width = Math.round(viewport.width); c.height = Math.round(viewport.height);
   await item.pdfPage.render({ canvasContext: c.getContext('2d'), viewport }).promise;
-  if (item.rect){
-    const r = scale / item.previewScale;
-    const ctx = c.getContext('2d');
-    ctx.fillStyle = 'rgba(255,228,77,0.5)';
-    ctx.fillRect(item.rect.x*r, item.rect.y*r, item.rect.w*r, item.rect.h*r);
-    ctx.strokeStyle = 'rgba(179,49,44,0.9)';
-    ctx.lineWidth = Math.max(2, r * 0.6);
-    ctx.strokeRect(item.rect.x*r, item.rect.y*r, item.rect.w*r, item.rect.h*r);
-  }
+  drawHighlight(c.getContext('2d'), item, scale / item.previewScale);
   return c;
 }
 
