@@ -1,6 +1,18 @@
 /* ---------- OCR 자동 인식 ---------- */
 const OCR_FIELD_LABELS = { auto: '자동 판단', date: '날짜', place: '장소', amount: '금액' };
 let ocrQueue = Promise.resolve();
+let sharedOCRWorker = null, ocrIdleTimer = null;
+async function releaseOCRWorker(){
+  clearTimeout(ocrIdleTimer);
+  const worker = sharedOCRWorker;
+  sharedOCRWorker = null;
+  if (worker) await worker.terminate().catch(err => console.error(err));
+}
+async function getOCRWorker(){
+  clearTimeout(ocrIdleTimer);
+  if (!sharedOCRWorker) sharedOCRWorker = await Tesseract.createWorker('kor+eng');
+  return sharedOCRWorker;
+}
 function queueOCR(item, { retry = false } = {}){
   if (!item.alive || !item.baseCanvas) return;
   const job = {
@@ -26,7 +38,7 @@ async function doOCR(item, job){
   try{
     if (!isCurrentOCR(item, job)) return;
     item.els.ocrStatus.textContent = 'OCR 인식 중…';
-    worker = await Tesseract.createWorker('kor+eng');
+    clearTimeout(ocrIdleTimer);
     const regional = job.rects.length > 0;
     const results = [];
     let failed = 0;
@@ -37,6 +49,8 @@ async function doOCR(item, job){
         : '전체 영수증 인식 중…';
       let input;
       try{
+        worker = await getOCRWorker();
+        if (!isCurrentOCR(item, job)) return;
         input = await makeOCRInput(item, rect);
         await worker.setParameters({ tessedit_pageseg_mode: regional ? '6' : '3', preserve_interword_spaces: '1' });
         let result = await worker.recognize(input.source);
@@ -63,6 +77,7 @@ async function doOCR(item, job){
       } catch(err){
         console.error(err);
         failed++;
+        await releaseOCRWorker();
       } finally {
         input?.release();
       }
@@ -89,7 +104,7 @@ async function doOCR(item, job){
     console.error(err);
     if (isCurrentOCR(item, job)) item.els.ocrStatus.textContent = 'OCR 인식 실패 · 기존 값 유지 · 다시 시도해주세요';
   } finally {
-    if (worker) await worker.terminate().catch(err => console.error(err));
+    if (sharedOCRWorker) ocrIdleTimer = setTimeout(() => { void releaseOCRWorker(); }, 60000);
     if (item.alive && item.ocrVersion === job.version){
       item.els.ocrRetry.disabled = false;
       updateRegionControls(item);
@@ -111,9 +126,6 @@ function getOCRBounds(rect, previewWidth, previewHeight, sourceWidth, sourceHeig
 }
 
 async function makeOCRInput(item, rect){
-  if (!rect && item.type === 'image'){
-    return { source: item.img, width: item.naturalWidth, release(){} };
-  }
   const isPDF = item.type === 'pdf';
   const viewport = isPDF ? item.pdfPage.getViewport({ scale: 2 }) : null;
   const width = isPDF ? viewport.width : item.naturalWidth;

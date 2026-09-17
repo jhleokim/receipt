@@ -1,0 +1,16 @@
+.receipt-share-dialog { width:min(480px,calc(100vw - 32px)); max-height:85dvh; padding:24px; border:1px solid var(--line,#E2DACA); border-radius:16px; background:var(--paper,#FBF8F1); color:var(--ink,#1E1C19); font:inherit; box-shadow:0 24px 80px #1e1c1933; }
+.receipt-share-dialog::backdrop { background:#1e1c1980; }
+.receipt-share-dialog .share-head { display:flex; gap:16px; align-items:center; justify-content:space-between; }
+.receipt-share-dialog h2 { margin:0; font-size:20px; }
+.receipt-share-dialog button { font:inherit; cursor:pointer; border-radius:8px; min-height:44px; }
+.receipt-share-dialog .share-close { width:44px; border:0; background:transparent; color:inherit; }
+.receipt-share-dialog .share-status { line-height:1.8; font-size:14px; color:var(--ink-2,#57503F); }
+.receipt-share-dialog .share-files { padding:12px 16px; margin:16px 0 24px; list-style:none; background:var(--paper-sunk,#F3EDE0); border-radius:8px; max-height:180px; overflow:auto; font-size:12px; overflow-wrap:anywhere; }
+.receipt-share-dialog .share-files:empty { display:none; }
+.receipt-share-dialog li + li { margin-top:8px; }
+.receipt-share-dialog .share-actions { display:flex; flex-wrap:wrap; gap:10px; }
+.receipt-share-dialog .share-actions button { flex:1; padding:12px; border:1px solid var(--line-strong,#C9BDA4); background:var(--paper,#FBF8F1); color:inherit; }
+.receipt-share-dialog .share-actions .share-choose { background:var(--stamp,#A62F2A); color:white; border-color:transparent; }
+.receipt-share-dialog button:disabled { opacity:.5; cursor:default; }
+.receipt-share-dialog button:focus-visible { outline:2px solid var(--stamp,#A62F2A); outline-offset:3px; }
+.receipt-share-dialog [hidden] { display:none !important; }
