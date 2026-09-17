@@ -6,9 +6,9 @@ const vm = require('node:vm');
 
 const root = path.join(__dirname, '..');
 const ocr = fs.readFileSync(path.join(root, 'public/receipt-ocr.js'), 'utf8');
-const html = fs.readFileSync(path.join(root, 'public/index.html'), 'utf8');
+const html = fs.readFileSync(path.join(root, 'public/index.html'), 'utf8') + fs.readFileSync(path.join(root, 'public/app.js'), 'utf8');
 function context(extra = {}){
-  const ctx = vm.createContext({ console: { error(){} }, Date, ...extra });
+  const ctx = vm.createContext({ console: { error(){} }, Date, setTimeout: (fn, ms) => { const timer = setTimeout(fn, ms); timer.unref(); return timer; }, clearTimeout, ...extra });
   vm.runInContext(ocr, ctx);
   return ctx;
 }
@@ -43,6 +43,7 @@ const result = (text, confidence = 95) => ({ data: { text, confidence } });
 
 test('all inline scripts and the OCR script have valid syntax', () => {
   new vm.Script(ocr);
+  new vm.Script(fs.readFileSync(path.join(root, 'public/app.js'), 'utf8'));
   for (const [, code] of html.matchAll(/<script(?:\s[^>]*)?>([\s\S]*?)<\/script>/g)) new vm.Script(code);
 });
 
@@ -88,7 +89,28 @@ test('retry recognizes each selected region and only replaces fields it reads', 
   assert.equal(it.els.amount.value, '12500');
   assert.equal(it.els.place.value, '기존카페');
   assert.equal(it.els.ocrRetry.disabled, false);
+  assert.equal(h.terminated(), 0);
+  await h.ctx.releaseOCRWorker();
   assert.equal(h.terminated(), 1);
+});
+
+test('sequential receipts reuse one OCR worker and idle cleanup releases it', async () => {
+  let created = 0, terminated = 0, idle;
+  const ctx = context({
+    setTimeout(fn) { idle = fn; return 1; }, clearTimeout() {},
+    updateFnamePreview() {}, updateRegionControls() {},
+    Tesseract: { async createWorker() { created++; return {
+      async setParameters() {}, async recognize() { return result('12500'); }, async terminate() { terminated++; }
+    }; } }
+  });
+  ctx.makeOCRInput = async () => ({ source: {}, width: 1200, release() {} });
+  await Promise.all([ctx.queueOCR(item(), { retry: true }), ctx.queueOCR(item(), { retry: true })]);
+  assert.equal(created, 1); assert.equal(terminated, 0);
+  await idle();
+  assert.equal(terminated, 1);
+  await ctx.queueOCR(item(), { retry: true });
+  assert.equal(created, 2);
+  await ctx.releaseOCRWorker();
 });
 
 test('empty and failed recognition preserve all existing fields and allow retry', async () => {
@@ -98,6 +120,7 @@ test('empty and failed recognition preserve all existing fields and allow retry'
     assert.equal(it.els.amount.value, '999');
     assert.equal(it.els.date.value, '2026-09-01');
     assert.equal(it.els.ocrRetry.disabled, false);
+    await h.ctx.releaseOCRWorker();
     assert.equal(h.terminated(), 1);
   }
 });
@@ -127,6 +150,7 @@ test('editing regions or removing the card invalidates in-flight results', async
     const h = harness(() => { invalidate(it); return result('12,500'); });
     await h.ctx.queueOCR(it, { retry: true });
     assert.equal(it.els.amount.value, '999');
+    await h.ctx.releaseOCRWorker();
     assert.equal(h.terminated(), 1);
   }
 });
@@ -204,7 +228,7 @@ test('canvas and individual PDF exports include every red region with 10% fill',
     PDFDocument: { async load(){ return { getPage: () => ({ drawRectangle: r => rectangles.push(r) }), save: async () => new Uint8Array() }; } }
   });
   vm.runInContext(section('function drawHighlight(', '// 저장이 끝난'), ctx);
-  vm.runInContext(section('async function exportPdfBlob(', 'async function shareItem('), ctx);
+  vm.runInContext(section('async function exportPdfBlob(', 'function shareItem('), ctx);
   const it = item();
   it.rects.push({ x: 50, y: 60, w: 30, h: 20, field: 'auto' });
   it.previewScale = 0.5; it.pageHeightPt = 1600;

@@ -1,0 +1,643 @@
+
+  /* =========================================================
+     감열지 영수증에서 가져온 디자인 시스템.
+     값은 전부 아래 토큰에서만 꺼내 쓴다 — 임의의 px/색을 새로 만들지 않는다.
+     ========================================================= */
+  :root{
+    /* 종이 */
+    --paper:#FBF8F1;        /* 카드·패널 표면 */
+    --paper-sunk:#F3EDE0;   /* 한 단계 눌린 면(칩·미리보기 바탕) */
+    --ground:#EAE3D3;       /* 페이지 바닥 */
+
+    /* 잉크 — 본문에 쓰는 세 단계는 전부 AA 이상 */
+    --ink:#1E1C19;          /* 본문·제목 */
+    --ink-2:#57503F;        /* 보조 설명 (6.9:1) */
+    --ink-3:#665F51;        /* 라벨·메타 (5.0:1) */
+
+    --line:#E2DACA;         /* 기본 경계 */
+    --line-strong:#C9BDA4;  /* 강조 경계·점선 */
+
+    /* 도장 빨강 — 액센트는 이 하나뿐 */
+    --stamp:#A62F2A;
+    --stamp-deep:#82231F;
+    --stamp-wash:#F8E9E6;
+
+    --ok:#2C6B42;
+    --ok-wash:#E8F1EA;
+
+    /* 하나금융그룹 청록 — 저장 완료를 알리는 데만 쓴다 (로고 SVG 원색) */
+    --hana:0,149,145;        /* rgb 성분으로 둬야 그림자 투명도를 단계별로 줄 수 있다 */
+    --hana-deep:#00706D;
+
+    /* 타입 */
+    --ui:'IBM Plex Sans KR', system-ui, -apple-system, 'Apple SD Gothic Neo', 'Malgun Gothic', sans-serif;
+    --mono:'IBM Plex Mono', ui-monospace, SFMono-Regular, Menlo, monospace;
+
+    /* 타입 스케일 */
+    --t-2xs:11px; --t-xs:12px; --t-sm:13px; --t-md:15px; --t-lg:17px; --t-xl:21px; --t-2xl:28px;
+
+    /* 스페이싱 스케일 */
+    --s1:4px; --s2:8px; --s3:12px; --s4:16px; --s5:24px; --s6:32px; --s7:48px;
+
+    --r1:6px; --r2:10px;
+    --shadow:0 1px 2px rgba(30,28,25,.05), 0 10px 24px -16px rgba(30,28,25,.45);
+    --wrap:1120px;
+    --bar-h:88px;           /* 하단 액션바가 차지하는 높이 */
+  }
+
+  *{box-sizing:border-box;}
+
+  html{-webkit-text-size-adjust:100%;}
+  body{
+    margin:0; min-height:100vh;
+    /* 카드가 몇 장 없을 때도 푸터가 바닥에 붙도록 세로 플렉스로 둔다 */
+    display:flex; flex-direction:column;
+    background:var(--ground);
+    color:var(--ink);
+    font-family:var(--ui);
+    font-size:var(--t-md);
+    line-height:1.6;
+    padding-bottom:var(--s7);
+    -webkit-font-smoothing:antialiased;
+  }
+  body.has-bar{padding-bottom:calc(var(--bar-h) + var(--s5));}
+
+  .wrap{width:100%; max-width:var(--wrap); margin:0 auto; padding:0 var(--s5);}
+
+  /* 숫자·파일명·코드는 모노로 — 자릿수가 맞아야 읽히는 것들만 */
+  .mono{font-family:var(--mono); font-variant-numeric:tabular-nums;}
+
+  /* ---------- 헤더 ---------- */
+  header{
+    background:var(--paper);
+    border-bottom:1px solid var(--line);
+  }
+  .head-inner{
+    max-width:var(--wrap); margin:0 auto; padding:var(--s5);
+    display:flex; align-items:baseline; gap:var(--s4) var(--s5); flex-wrap:wrap;
+  }
+  .brand{
+    margin:0; font-size:var(--t-xl); font-weight:700; letter-spacing:-.01em;
+    display:flex; align-items:center; gap:var(--s2);
+  }
+  .brand .dot{
+    width:7px; height:7px; border-radius:999px; background:var(--stamp);
+    display:inline-block; flex-shrink:0;
+  }
+  .head-lead{
+    margin:0; color:var(--ink-2); font-size:var(--t-sm);
+    flex:1 1 320px; min-width:0;
+  }
+  .format-chip{
+    display:inline-flex; align-items:center; gap:var(--s2);
+    padding:var(--s2) var(--s3); border-radius:var(--r1);
+    background:var(--paper-sunk); border:1px solid var(--line);
+    font-size:var(--t-xs); color:var(--ink-2); white-space:nowrap;
+  }
+  .format-chip b{font-family:var(--mono); font-weight:500; color:var(--ink);}
+
+  /* ---------- 시작 영역: QR + 드롭존 나란히 ---------- */
+  .start{
+    width:100%;
+    display:grid; gap:var(--s4);
+    grid-template-columns:minmax(0,360px) minmax(0,1fr);
+    align-items:stretch;
+    margin:var(--s5) auto var(--s6);
+  }
+  @media (max-width:820px){ .start{grid-template-columns:1fr;} }
+
+  .panel{
+    background:var(--paper); border:1px solid var(--line);
+    border-radius:var(--r2); box-shadow:var(--shadow);
+  }
+
+  /* QR: 데스크톱은 펼친 상태, 모바일은 접어서 자리를 안 뺏게 */
+  #qrPanel{padding:var(--s4);}
+  #qrPanel > summary{
+    list-style:none; cursor:pointer;
+    display:flex; align-items:center; gap:var(--s2);
+    font-size:var(--t-sm); font-weight:600; color:var(--ink);
+  }
+  #qrPanel > summary::-webkit-details-marker{display:none;}
+  #qrPanel > summary .chev{
+    margin-left:auto; color:var(--ink-3); transition:transform .15s;
+  }
+  #qrPanel[open] > summary .chev{transform:rotate(180deg);}
+  .qr-body{
+    display:flex; gap:var(--s4); align-items:flex-start;
+    margin-top:var(--s4);
+  }
+  #qrcode{
+    width:128px; height:128px; flex-shrink:0;
+    background:#fff; padding:var(--s2);
+    border:1px solid var(--line); border-radius:var(--r1);
+  }
+  #qrcode img, #qrcode canvas{display:block; width:100%; height:100%;}
+  .qr-info{flex:1; min-width:0;}
+  .qr-info p{margin:0 0 var(--s3); font-size:var(--t-xs); color:var(--ink-2); line-height:1.65;}
+  /* 주소는 QR이 대신 전달하므로 한 줄로만 두고 넘치면 줄인다 */
+  .qr-link{
+    display:block; margin:0 0 var(--s3);
+    font-family:var(--mono); font-size:var(--t-2xs); color:var(--ink-3);
+    overflow:hidden; text-overflow:ellipsis; white-space:nowrap;
+  }
+  .qr-status{
+    display:flex; align-items:center; gap:var(--s2);
+    font-size:var(--t-xs); color:var(--ink-2); margin-bottom:var(--s3);
+  }
+  .qr-status .pip{
+    width:6px; height:6px; border-radius:999px; background:var(--ok);
+    flex-shrink:0; box-shadow:0 0 0 3px var(--ok-wash);
+  }
+  .qr-status b{font-family:var(--mono); color:var(--stamp); font-weight:600;}
+  .qr-status.offline .pip{background:var(--ink-3); box-shadow:0 0 0 3px var(--line);}
+  #qrRefresh{
+    min-height:36px; padding:var(--s2) var(--s3);
+    border:1px solid var(--line-strong); border-radius:var(--r1);
+    background:var(--paper); color:var(--ink-2);
+    font-family:inherit; font-size:var(--t-xs); cursor:pointer;
+    transition:border-color .15s, color .15s;
+  }
+  #qrRefresh:hover{border-color:var(--stamp); color:var(--stamp);}
+
+  /* ---------- 드롭존 ---------- */
+  /* 점선은 여기 한 곳에만 쓴다 — "여기에 놓아라"는 뜻이 실제로 있는 자리 */
+  #dropzone{
+    display:flex; flex-direction:column; align-items:center; justify-content:center;
+    gap:var(--s2); text-align:center; cursor:pointer;
+    padding:var(--s6) var(--s5); min-height:180px;
+    background:var(--paper);
+    border:1.5px dashed var(--line-strong); border-radius:var(--r2);
+    color:var(--ink-3); font-size:var(--t-xs);
+    transition:border-color .15s, background .15s, color .15s;
+  }
+  #dropzone:hover{border-color:var(--stamp); background:var(--stamp-wash);}
+  #dropzone.drag{border-color:var(--stamp); background:var(--stamp-wash); color:var(--stamp);}
+  #dropzone strong{display:block; font-size:var(--t-lg); font-weight:600; color:var(--ink);}
+  #dropzone .dz-icon{color:var(--line-strong); margin-bottom:var(--s1);}
+  #dropzone:hover .dz-icon, #dropzone.drag .dz-icon{color:var(--stamp);}
+
+  /* ---------- 카드 그리드 ---------- */
+  #cards{
+    width:100%; max-width:var(--wrap); margin:0 auto; padding:0 var(--s5);
+    display:grid; grid-template-columns:repeat(auto-fill, minmax(300px,1fr));
+    gap:var(--s6) var(--s5);
+    flex:1 0 auto; /* 카드가 없을 때 남는 공간을 먹어서 푸터를 바닥으로 민다 */
+  }
+
+  .card{
+    position:relative;
+    background:var(--paper);
+    border:1px solid var(--line);
+    border-bottom:none;
+    border-radius:var(--r2) var(--r2) 0 0;
+    padding:var(--s4) var(--s4) var(--s5);
+    box-shadow:var(--shadow);
+    transition:box-shadow .45s cubic-bezier(.22,1,.36,1), border-color .45s cubic-bezier(.22,1,.36,1);
+  }
+  /* 영수증 절취선 — 종이 컨셉을 남기는 유일한 장식 */
+  .card::after{
+    content:"";
+    position:absolute; left:-1px; right:-1px; bottom:-8px; height:16px;
+    background:
+      radial-gradient(circle at 8px 8px, transparent 7.5px, var(--line) 7.5px, var(--line) 8.5px, transparent 8.5px) 0 0/16px 16px repeat-x,
+      radial-gradient(circle at 8px 8px, transparent 8px, var(--paper) 8px) 0 0/16px 16px repeat-x;
+  }
+
+  .card-top{
+    display:flex; align-items:center; gap:var(--s2);
+    margin-bottom:var(--s3);
+  }
+  .card-top .fname{
+    flex:1; min-width:0;
+    font-family:var(--mono); font-size:var(--t-xs); color:var(--ink-3);
+    overflow:hidden; text-overflow:ellipsis; white-space:nowrap;
+  }
+  .card-top button.remove{
+    flex-shrink:0; width:28px; height:28px; padding:0;
+    display:inline-flex; align-items:center; justify-content:center;
+    background:none; border:none; border-radius:var(--r1);
+    color:var(--ink-3); font-size:var(--t-md); line-height:1; cursor:pointer;
+    transition:background .15s, color .15s;
+  }
+  .card-top button.remove:hover{background:var(--stamp-wash); color:var(--stamp);}
+
+  /* 영수증은 카드 폭에 꽉 맞춰 보여주고, 넘치는 높이는 이 안에서 스크롤한다.
+     높이로 잘라내면 세로로 긴 영수증이 폭 60px 실오라기로 짓눌려 못 읽는다. */
+  .canvas-wrap{
+    position:relative;
+    display:block; text-align:center;
+    min-height:140px; max-height:420px;
+    overflow-y:auto; overflow-x:hidden;
+    background:var(--paper-sunk);
+    border:1px solid var(--line); border-radius:var(--r1);
+  }
+  /* 캔버스는 CSS로만 줄인다 — 드래그 좌표는 JS가 getBoundingClientRect로 환산 */
+  .canvas-wrap canvas{
+    display:inline-block; vertical-align:top;
+    max-width:100%; width:auto; height:auto;
+  }
+  /* 아래가 더 있다는 표시. inset 그림자는 스크롤해도 테두리에 붙어 있는다 */
+  .canvas-wrap.scrollable{box-shadow:inset 0 -26px 18px -18px rgba(30,28,25,.55);}
+  .canvas-wrap .loading{
+    position:absolute; top:50%; left:50%; transform:translate(-50%,-50%);
+    font-size:var(--t-xs); color:var(--ink-3);
+  }
+
+  /* ---------- 하이라이트 / OCR 줄 ---------- */
+  .hl-row{display:flex; gap:var(--s2); margin-top:var(--s3);}
+  .hl-row .hl-toggle{
+    flex:1; display:inline-flex; align-items:center; justify-content:center; gap:var(--s2);
+    padding:var(--s2) var(--s3); min-height:36px;
+    border:1px solid var(--line-strong); border-radius:var(--r1);
+    background:var(--paper); color:var(--ink-2);
+    font-family:inherit; font-size:var(--t-xs); font-weight:500; cursor:pointer;
+    transition:background .15s, color .15s, border-color .15s;
+  }
+  .hl-row .hl-toggle:hover{border-color:var(--stamp); color:var(--stamp);}
+  .hl-row .hl-toggle.active{background:var(--stamp); border-color:var(--stamp); color:#fff;}
+  .hl-row .clear{
+    flex-shrink:0; padding:var(--s2) var(--s3); min-height:36px;
+    border:1px solid var(--line); border-radius:var(--r1);
+    background:none; color:var(--ink-3);
+    font-family:inherit; font-size:var(--t-xs); cursor:pointer;
+    transition:border-color .15s, color .15s;
+  }
+  .hl-row .clear:hover{border-color:var(--line-strong); color:var(--ink);}
+  .hl-options{display:flex; align-items:center; gap:var(--s2); margin-top:var(--s2); font-size:var(--t-xs); color:var(--ink-2);}
+  .hl-options select{padding:var(--s1) var(--s2); font:inherit; color:var(--ink); background:var(--paper); border:1px solid var(--line-strong); border-radius:var(--r1);}
+  .hl-hint{margin:var(--s2) 0 0; font-size:var(--t-xs); color:var(--ink-3);}
+  .hl-regions{display:flex; flex-wrap:wrap; gap:var(--s1); margin-top:var(--s2);}
+  .hl-regions:empty{display:none;}
+  .hl-region{padding:var(--s1) var(--s2); font:inherit; font-size:var(--t-xs); color:var(--stamp); background:rgba(179,49,44,.1); border:1px solid var(--line); border-radius:var(--r1); cursor:pointer;}
+  .hl-row button:disabled,.ocr-retry:disabled{opacity:.5; cursor:default;}
+
+  .ocr-row{
+    display:flex; justify-content:space-between; align-items:center; gap:var(--s2);
+    min-height:20px; margin-top:var(--s2);
+    font-size:var(--t-xs); color:var(--ink-3);
+  }
+  .ocr-row .ocr-status{min-width:0; overflow-wrap:anywhere;}
+  .ocr-row button.ocr-retry{
+    flex-shrink:0; padding:0; border:none; background:none;
+    color:var(--stamp); font-family:inherit; font-size:var(--t-xs);
+    cursor:pointer; text-decoration:underline; text-underline-offset:2px;
+  }
+
+  /* ---------- 입력 필드 ---------- */
+  .fields{
+    display:grid; grid-template-columns:1fr 1fr; gap:var(--s3);
+    margin-top:var(--s3);
+  }
+  .field{display:flex; flex-direction:column; gap:var(--s1);}
+  .field label{font-size:var(--t-xs); color:var(--ink-3);}
+  .field input{
+    width:100%; min-height:40px; padding:var(--s2) var(--s3);
+    font-family:inherit; font-size:var(--t-sm); color:var(--ink);
+    background:var(--paper); border:1px solid var(--line-strong); border-radius:var(--r1);
+    transition:border-color .15s, box-shadow .15s;
+  }
+  .field input.in-amount, .field input.in-date{font-family:var(--mono); font-variant-numeric:tabular-nums;}
+  .field input:focus{
+    outline:none; border-color:var(--stamp);
+    box-shadow:0 0 0 3px var(--stamp-wash);
+  }
+  .field input::placeholder{color:var(--ink-3); opacity:.65;}
+
+  .fname-preview{
+    margin-top:var(--s3); padding:var(--s3);
+    background:var(--paper-sunk); border-radius:var(--r1);
+    font-size:var(--t-xs); color:var(--ink-3);
+    display:flex; flex-direction:column; gap:var(--s1);
+  }
+  .fname-preview b{
+    font-family:var(--mono); font-size:var(--t-sm); font-weight:500;
+    color:var(--ink); word-break:break-all;
+  }
+
+  .save-row{margin-top:var(--s3); display:flex; gap:var(--s2);}
+  .save-btn{
+    flex:1; min-height:44px; padding:var(--s3) var(--s4);
+    border:none; border-radius:var(--r1);
+    background:var(--stamp); color:#fff;
+    font-family:inherit; font-size:var(--t-sm); font-weight:600; cursor:pointer;
+    transition:background .15s;
+  }
+  .save-btn:hover{background:var(--stamp-deep);}
+  .save-btn:disabled{background:var(--line-strong); cursor:default;}
+
+  /* 공유는 Web Share 를 지원하는 환경에서만 붙는다 (아래 CAN_SHARE_FILE 참고) */
+  .share-btn{
+    flex-shrink:0; min-height:44px; padding:var(--s3) var(--s4);
+    display:inline-flex; align-items:center; gap:var(--s2);
+    border:1px solid var(--line-strong); border-radius:var(--r1);
+    background:var(--paper); color:var(--ink);
+    font-family:inherit; font-size:var(--t-sm); font-weight:500; cursor:pointer;
+    transition:background .15s, border-color .15s, color .15s;
+  }
+  .share-btn:hover{border-color:var(--stamp); color:var(--stamp); background:var(--stamp-wash);}
+  .share-btn:disabled{
+    background:var(--paper-sunk); border-color:var(--line);
+    color:var(--ink-3); cursor:default;
+  }
+  .share-btn svg{flex-shrink:0;}
+
+  /* ---------- 저장 완료 ----------
+     도장을 찍는 대신 종이 가장자리에 청록 빛이 남는다.
+     한 겹짜리 진한 그림자 대신, 얇은 링 + 가까운 그림자 + 넓게 퍼지는 빛을
+     겹쳐서 "빛난다"에 가깝게 만든다. */
+  .card.saved{
+    border-color:rgba(var(--hana), .55);
+    box-shadow:
+      0 0 0 1px rgba(var(--hana), .40),
+      0 1px 2px rgba(30,28,25,.05),
+      0 0 20px 0 rgba(var(--hana), .28),
+      0 14px 34px -8px rgba(var(--hana), .42);
+  }
+  /* 절취선도 같이 물들어야 종이 한 장 전체가 빛나 보인다 */
+  .card.saved::after{
+    background:
+      radial-gradient(circle at 8px 8px, transparent 7.5px, rgba(var(--hana), .5) 7.5px, rgba(var(--hana), .5) 8.5px, transparent 8.5px) 0 0/16px 16px repeat-x,
+      radial-gradient(circle at 8px 8px, transparent 8px, var(--paper) 8px) 0 0/16px 16px repeat-x;
+  }
+  /* 저장한 순간에만 한 번 부풀었다가 위 상태로 가라앉는다 */
+  @keyframes savedBloom{
+    0%{
+      box-shadow:
+        0 0 0 1px rgba(var(--hana), 0),
+        0 1px 2px rgba(30,28,25,.05),
+        0 0 20px 0 rgba(var(--hana), 0),
+        0 14px 34px -8px rgba(var(--hana), 0);
+    }
+    40%{
+      box-shadow:
+        0 0 0 2px rgba(var(--hana), .65),
+        0 1px 2px rgba(30,28,25,.05),
+        0 0 34px 4px rgba(var(--hana), .5),
+        0 20px 52px -10px rgba(var(--hana), .65);
+    }
+  }
+  .card.saved{animation:savedBloom .85s cubic-bezier(.22,1,.36,1);}
+
+  /* 색만으로 알리지 않도록 파일명 옆에 조용한 글자 표시를 남긴다 */
+  .saved-tag{
+    display:none; flex-shrink:0;
+    align-items:center; gap:3px;
+    font-size:var(--t-2xs); font-weight:600; color:var(--hana-deep);
+  }
+  .card.saved .saved-tag{display:inline-flex;}
+
+  @media (prefers-reduced-motion: reduce){
+    .card.saved{animation:none;}
+  }
+
+  /* ---------- 하단 액션바 ---------- */
+  #bulkBar, #queuePanel{
+    position:fixed; left:0; right:0; bottom:0; z-index:20;
+    padding:var(--s3) 0 var(--s4);
+    background:var(--paper);
+    border-top:1px solid var(--line);
+    box-shadow:0 -8px 24px -12px rgba(30,28,25,.35);
+  }
+  #bulkBar.hidden, #queuePanel.hidden{display:none;}
+  .bulk-inner{
+    max-width:var(--wrap); margin:0 auto; padding:0 var(--s5);
+    display:flex; gap:var(--s3); align-items:center; flex-wrap:wrap;
+  }
+  .bulk-count{margin-right:auto; font-size:var(--t-sm); color:var(--ink-2);}
+  .bulk-count b{font-family:var(--mono); font-size:var(--t-lg); color:var(--stamp); font-weight:600;}
+  .bulk-btn{
+    min-height:44px; padding:var(--s3) var(--s5);
+    border:1px solid var(--line-strong); border-radius:var(--r1);
+    background:var(--paper); color:var(--ink);
+    font-family:inherit; font-size:var(--t-sm); font-weight:500; cursor:pointer;
+    transition:background .15s, border-color .15s, color .15s;
+  }
+  .bulk-btn:hover{border-color:var(--ink-3); background:var(--paper-sunk);}
+  .bulk-btn.primary{
+    background:var(--stamp); border-color:var(--stamp); color:#fff; font-weight:600;
+  }
+  .bulk-btn.primary:hover{background:var(--stamp-deep); border-color:var(--stamp-deep);}
+  .bulk-btn:disabled{
+    background:var(--paper-sunk); border-color:var(--line);
+    color:var(--ink-3); cursor:default;
+  }
+  .bulk-status{
+    max-width:var(--wrap); margin:var(--s2) auto 0; padding:0 var(--s5);
+    min-height:16px; font-size:var(--t-xs); color:var(--ink-2); text-align:center;
+  }
+  @media (max-width:640px){
+    .bulk-inner{flex-direction:column; align-items:stretch;}
+    .bulk-count{margin:0 0 var(--s1); text-align:center;}
+    .bulk-btn{width:100%;}
+  }
+
+  /* ---------- PDF 미리보기 ---------- */
+  #pdfPreviewPanel{
+    position:fixed; inset:0; z-index:50;
+    background:rgba(30,28,25,.5);
+    display:flex; align-items:flex-end; justify-content:center;
+  }
+  #pdfPreviewPanel.hidden{display:none;}
+  .preview-sheet{
+    width:100%; max-width:720px; max-height:88vh;
+    display:flex; flex-direction:column; gap:var(--s4);
+    padding:var(--s5);
+    background:var(--paper);
+    border-radius:var(--r2) var(--r2) 0 0;
+    overflow-y:auto;
+  }
+  @media (min-width:721px){
+    #pdfPreviewPanel{align-items:center;}
+    .preview-sheet{border-radius:var(--r2); max-height:84vh;}
+  }
+  .preview-head{display:flex; justify-content:space-between; align-items:center; gap:var(--s3);}
+  .preview-head h3{margin:0; font-size:var(--t-lg); font-weight:600;}
+  .preview-head .close{
+    width:32px; height:32px; padding:0;
+    display:inline-flex; align-items:center; justify-content:center;
+    border:none; border-radius:var(--r1); background:none;
+    color:var(--ink-3); font-size:var(--t-md); cursor:pointer;
+    transition:background .15s, color .15s;
+  }
+  .preview-head .close:hover{background:var(--paper-sunk); color:var(--ink);}
+  .preview-slider-row{
+    display:flex; align-items:center; gap:var(--s3);
+    font-size:var(--t-xs); color:var(--ink-3);
+  }
+  .preview-slider-row input[type=range]{flex:1; accent-color:var(--stamp);}
+  .preview-slider-row b{
+    width:44px; text-align:right;
+    font-family:var(--mono); font-size:var(--t-sm); color:var(--ink);
+  }
+  #previewStrip{
+    display:flex; gap:var(--s4); overflow-x:auto;
+    padding:var(--s4) var(--s1);
+    background:var(--paper-sunk); border-radius:var(--r1);
+  }
+  .preview-page{flex-shrink:0; text-align:center;}
+  .preview-page canvas{
+    display:block; border-radius:2px;
+    box-shadow:0 2px 10px -2px rgba(30,28,25,.3);
+  }
+  .preview-page-label{
+    margin-top:var(--s2);
+    font-family:var(--mono); font-size:var(--t-2xs); color:var(--ink-3);
+  }
+  .preview-foot{
+    display:flex; justify-content:space-between; align-items:center; gap:var(--s3);
+    font-size:var(--t-xs); color:var(--ink-2);
+  }
+  #previewDownload{
+    min-height:44px; padding:var(--s3) var(--s5);
+    border:none; border-radius:var(--r1);
+    background:var(--stamp); color:#fff;
+    font-family:inherit; font-size:var(--t-sm); font-weight:600; cursor:pointer;
+    transition:background .15s;
+  }
+  #previewDownload:hover{background:var(--stamp-deep);}
+  #previewDownload:disabled{background:var(--line-strong); cursor:default;}
+
+  /* ---------- 푸터 ---------- */
+  footer{
+    width:100%; max-width:var(--wrap); margin:var(--s7) auto 0; padding:var(--s5);
+    border-top:1px solid var(--line);
+    text-align:center; font-size:var(--t-xs); color:var(--ink-3); line-height:1.8;
+  }
+  #verTag{
+    display:inline-block; margin-top:var(--s2); padding:2px var(--s2);
+    border:1px solid var(--line); border-radius:var(--r1);
+    font-family:var(--mono); font-size:var(--t-2xs); color:var(--ink-3);
+  }
+
+  /* ---------- 모바일 ---------- */
+  @media (max-width:820px){
+    .head-inner{padding:var(--s4) var(--s5); gap:var(--s2);}
+    .brand{font-size:var(--t-lg);}
+    .head-lead{flex-basis:100%;}
+    #dropzone{min-height:150px; padding:var(--s5) var(--s4);}
+    #cards{grid-template-columns:1fr; gap:var(--s6) var(--s4); padding:0 var(--s5);}
+    .fields{gap:var(--s2) var(--s3);}
+  }
+
+/* v2.0 — one receipt, one clear place to review it. */
+:root { --wrap:1440px; --r2:16px; }
+[hidden], .hidden { display:none !important; }
+button, input, select { font:inherit; }
+button { transition:background .16s, border-color .16s, transform .16s; }
+button:active:not(:disabled) { transform:translateY(1px); }
+button:focus-visible, input:focus-visible, select:focus-visible, [tabindex]:focus-visible, summary:focus-visible {
+  outline:2px solid var(--stamp); outline-offset:4px;
+}
+.head-inner { padding:24px 32px; }
+.head-lead { font-size:14px; }
+.start { grid-template-columns:340px 1fr; max-width:1100px; margin:40px auto; }
+#dropzone { min-height:230px; border-radius:16px; }
+#dropzone strong { font-size:20px; font-weight:600; letter-spacing:-.04em; }
+#qrPanel { box-shadow:none; }
+.has-receipts .start { max-width:1440px; margin:20px auto; align-items:start; }
+.has-receipts #dropzone { min-height:56px; padding:12px 24px; flex-direction:row; font-size:12px; }
+.has-receipts #dropzone strong { font-size:14px; }
+.has-receipts #dropzone .dz-icon { width:18px; height:18px; }
+#workspace { width:100%; max-width:1440px; padding:0 24px; margin:0 auto; display:grid; grid-template-columns:232px minmax(0,1fr); gap:24px; align-items:start; }
+#receiptNav { position:sticky; top:20px; min-width:0; }
+.nav-heading { display:flex; justify-content:space-between; padding:8px 12px 16px; font-weight:600; font-size:14px; }
+.nav-heading span { color:var(--stamp); font-family:var(--mono); }
+#receiptList { max-height:65vh; overflow-y:auto; padding:4px; }
+.receipt-nav-item { display:flex; gap:12px; align-items:center; width:100%; border:1px solid transparent; border-radius:12px; background:transparent; text-align:left; padding:14px 12px; cursor:pointer; color:var(--ink); margin-bottom:6px; }
+.receipt-nav-item > span:last-child { min-width:0; }
+.receipt-nav-item strong { display:block; font-size:14px; font-weight:500; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.receipt-nav-item small { display:block; font-size:11px; color:var(--ink-3); margin-top:4px; }
+.receipt-number { font:12px var(--mono); color:var(--ink-3); }
+.receipt-nav-item[aria-current=true] { background:var(--paper); border-color:var(--line-strong); box-shadow:0 2px 8px #1e1c1907; }
+.receipt-nav-item[aria-current=true] .receipt-number { color:var(--stamp); }
+.receipt-nav-item.is-saved strong::after { content:' ✓'; color:var(--hana-deep); }
+#addMore { width:100%; border:0; background:transparent; color:var(--ink-2); padding:14px; text-align:left; cursor:pointer; font-size:13px; }
+#cards { display:block; width:100%; padding:0; margin:0; min-width:0; }
+.card { padding:0; border:1px solid var(--line); border-radius:16px; overflow:hidden; box-shadow:0 8px 32px #1e1c1907; }
+.card::after { display:none; }
+.card-top { padding:14px 20px; margin-bottom:0; min-height:64px; background:var(--paper); border-bottom:1px solid var(--line); }
+.card-top .fname { font-size:12px; }
+.card-top button.remove { width:40px; height:40px; font-size:17px; }
+.card-body { display:grid; grid-template-columns:minmax(0,1.3fr) minmax(290px,1fr); }
+.receipt-stage { padding:24px; background:var(--paper-sunk); min-width:0; }
+.canvas-wrap { max-height:65vh; min-height:260px; padding:0; border:1px solid var(--line); border-radius:4px; background:white; margin:0 0 16px; }
+.canvas-wrap canvas { display:block; width:100%; max-width:none; height:auto; }
+.receipt-inspector { min-width:0; padding:28px; background:var(--paper); }
+.inspector-heading .eyebrow { color:var(--stamp); font-size:11px; font-weight:600; letter-spacing:.03em; }
+.inspector-heading h2 { margin:10px 0; font-size:21px; line-height:1.4; font-weight:600; letter-spacing:-.045em; }
+.inspector-heading p { margin:0 0 24px; color:var(--ink-3); font-size:13px; line-height:1.8; }
+.fields { padding:0; grid-template-columns:1fr 1fr; gap:20px 14px; }
+.field:nth-child(3), .field:nth-child(4) { grid-column:1/-1; }
+.field label { font-size:12px; margin-bottom:6px; }
+.field input { min-height:46px; padding:10px 12px; font-size:15px; border-radius:8px; background:var(--paper); }
+.field .in-amount { font-size:27px; font-family:var(--mono); font-weight:500; font-variant-numeric:tabular-nums; letter-spacing:-.04em; min-height:60px; }
+.fname-preview { padding:20px 0; border:0; background:none; margin:8px 0 0; font-size:11px; }
+.fname-preview b { font-size:11px; overflow-wrap:anywhere; }
+.save-row { padding:0; gap:10px; }
+.save-row button { min-height:48px; border-radius:8px; font-size:14px; }
+.ocr-row { display:flex; flex-direction:column; align-items:stretch; gap:10px; padding:14px; margin:0 0 24px; background:var(--paper-sunk); border:0; border-radius:10px; }
+.ocr-status { font-size:12px; line-height:1.75; min-height:20px; }
+.ocr-row button.ocr-retry { padding:10px; min-height:40px; border:1px solid var(--line-strong); background:var(--paper); text-decoration:none; border-radius:6px; font-size:12px; }
+.hl-row { padding:0; gap:8px; flex-wrap:wrap; }
+.hl-row button { min-height:40px; border-radius:7px; }
+.hl-options, .hl-hint { display:none; padding:0; }
+.highlighting .hl-options { display:block; margin-top:16px; }
+.highlighting .hl-hint { display:block; margin:10px 0 0; font-size:12px; line-height:1.8; }
+.hl-options select { min-height:40px; padding:6px 12px; }
+.hl-regions { padding:0; margin-top:10px; }
+.hl-region { min-height:36px; }
+.card:not(.highlighting) .hl-row .clear { display:none; }
+.card.modified .saved-tag { display:inline-flex; color:var(--stamp); font-size:11px; }
+.card.saved { animation:quiet-save .35s ease-out; box-shadow:0 0 0 1px rgba(var(--hana),.3),0 8px 24px rgba(var(--hana),.08); }
+@keyframes quiet-save { from { box-shadow:0 0 0 2px rgba(var(--hana),.4); } to { box-shadow:0 0 0 1px rgba(var(--hana),.3); } }
+.preview-sheet { max-width:1000px; width:100%; padding:24px; gap:20px; }
+.preview-slider-row { flex-wrap:wrap; font-size:13px; }
+.preview-slider-row select { padding:8px 12px; min-height:42px; border:1px solid var(--line-strong); background:var(--paper); border-radius:6px; }
+#previewStrip { padding:20px; max-height:62vh; overflow:auto; align-items:flex-start; }
+.preview-page canvas { max-width:none; }
+.preview-head .close { width:44px; height:44px; }
+.bulk-inner { max-width:1440px; }
+#notice { position:fixed; z-index:150; bottom:110px; left:50%; transform:translateX(-50%); display:flex; align-items:center; gap:20px; background:var(--ink); color:var(--paper); padding:12px 18px; border-radius:12px; box-shadow:var(--shadow); font-size:13px; max-width:calc(100vw - 32px); }
+#notice button { border:0; background:transparent; color:var(--paper); text-decoration:underline; min-height:40px; white-space:nowrap; cursor:pointer; }
+@media(max-width:1100px) {
+  #workspace { grid-template-columns:180px minmax(0,1fr); gap:16px; }
+  .receipt-inspector { padding:20px; }
+  .receipt-stage { padding:16px; }
+  .card-body { grid-template-columns:minmax(0,1fr) minmax(270px,1fr); }
+  .has-receipts #dropzone { font-size:0; }
+}
+@media(max-width:900px) {
+  #workspace { display:block; }
+  #receiptNav { position:static; margin-bottom:16px; }
+  .nav-heading { padding:0 4px 8px; }
+  #receiptList { display:flex; overflow-x:auto; max-height:none; gap:8px; }
+  .receipt-nav-item { width:210px; flex-shrink:0; margin:0; }
+  #addMore { display:none; }
+}
+@media(max-width:640px) {
+  .head-inner { padding:20px; }
+  .head-lead { font-size:12px; }
+  .format-chip { display:none; }
+  .start, .has-receipts .start { grid-template-columns:1fr; margin:20px auto; padding:0 16px; gap:10px; }
+  #dropzone { min-height:160px; }
+  #dropzone strong { font-size:17px; }
+  #workspace { padding:0 16px; }
+  .card-body { display:block; }
+  .receipt-stage { padding:16px; }
+  .canvas-wrap { max-height:48vh; min-height:180px; }
+  .receipt-inspector { padding:24px 20px; }
+  .inspector-heading h2 { font-size:20px; }
+  .fields input { font-size:16px; }
+  .bulk-inner { display:grid; grid-template-columns:1fr 1fr; gap:8px; }
+  .bulk-count { grid-column:1/-1; text-align:left; }
+  .bulk-btn { padding:10px 8px; font-size:12px; }
+  body.has-bar { padding-bottom:170px; }
+  .preview-sheet { padding:20px 16px; }
+  .preview-foot { flex-wrap:wrap; }
+  #previewDownload { flex:1; }
+  #notice { width:calc(100vw - 32px); justify-content:space-between; }
+}
+@media(prefers-reduced-motion:reduce) {
+  *, *::before, *::after { animation:none !important; transition:none !important; scroll-behavior:auto !important; }
+}
